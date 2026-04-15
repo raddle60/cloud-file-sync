@@ -66,7 +66,7 @@ cloud_file_sync/
 ```
 
 **字段说明**:
-- `encryption_enabled`: 是否启用加密
+- `encryption_enabled`: 是否启用加密（同时影响文件名hash和文件内容加密）
 - `encryption_key`: Base64编码的32字节密钥
 - `sync_pairs`: 同步对列表，支持多目录映射
 - 所有同步对共用同一加密密钥
@@ -79,8 +79,8 @@ cloud_file_sync/
 
 | 类型 | 云端文件名 | 内容 |
 |------|-----------|------|
-| 原文件 | `sha256(original_filename)` | 加密后的文件内容 |
-| Meta文件 | `sha256(original_filename).meta.json` | 加密的JSON |
+| 原文件 | `sha256(original_filename)` | AES-256-GCM加密后的文件内容 |
+| Meta文件 | `sha256(original_filename).meta.json` | AES-256-GCM加密的JSON |
 
 ### 5.2 非加密模式（encryption_enabled = false）
 
@@ -88,6 +88,14 @@ cloud_file_sync/
 |------|-----------|------|
 | 原文件 | `original_filename` | 原始文件内容 |
 | Meta文件 | `original_filename.meta.json` | 明文JSON |
+
+### 5.3 文件名Hash规则
+
+- 加密模式下：使用SHA256生成64字符十六进制哈希值
+- 非加密模式下：直接使用原始文件名
+- 云端tmp文件命名：在最终文件名后加 `.tmp`
+  - 加密模式: `sha256(original_filename).tmp`
+  - 非加密模式: `original_filename.tmp`
 
 ---
 
@@ -244,7 +252,45 @@ class CloudStorage(ABC):
 
 ---
 
-## 12. 错误处理
+## 12. 原子修改流程
+
+为防止同步过程中数据损坏，所有文件修改采用原子操作。
+
+### 12.1 本地文件修改（从云端下载）
+
+```
+1. 将云端文件下载到本地临时文件: 原名.tmp
+2. 计算临时文件的sha256值
+3. 比对sha256与云端meta中的sha256
+4. 若一致：
+   a. 删除原本地文件
+   b. 将tmp文件重命名为原文件名
+5. 若不一致：删除tmp文件，记录错误
+```
+
+### 12.2 云端文件上传
+
+```
+1. 将本地文件上传到云端临时文件: 目标文件名.tmp
+2. 获取云端tmp文件的hash值（如云端支持）
+   - 若支持：比对hash与本地sha256
+   - 若不支持：比对文件大小
+3. 若一致：
+   a. 删除云端原文件
+   b. 将tmp文件重命名为目标文件名
+4. 若不一致：删除云端tmp文件，记录错误
+```
+
+### 12.3 云端tmp文件命名
+
+| 模式 | 最终文件名 | tmp文件名 |
+|------|-----------|-----------|
+| 加密模式 | `sha256(original_filename)` | `sha256(original_filename).tmp` |
+| 非加密模式 | `original_filename` | `original_filename.tmp` |
+
+---
+
+## 13. 错误处理
 
 | 错误类型 | 处理方式 |
 |----------|----------|
@@ -280,7 +326,6 @@ python main.py sync --config config.json
 watchdog>=3.0.0      # 文件系统监控
 bce-python-sdk>=0.9  # 百度云BOS SDK
 pycryptodome>=3.18   # AES加密
-PyYAML>=6.0          # 配置解析
 ```
 
 ---
