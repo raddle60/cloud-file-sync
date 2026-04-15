@@ -98,7 +98,42 @@ class SyncEngine:
         # 2. 获取云端文件列表
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
 
-        # 3. 对比并上传本地有而云端没有的文件
+        # 3. 解析云端meta文件，保存到内存
+        cloud_metas = {}
+        for f in cloud_files:
+            if f.endswith('.meta.json'):
+                try:
+                    meta = self._download_and_read_meta(f)
+                    # 从meta获取cloud_name
+                    cloud_name = f[:-len('.meta.json')]
+                    cloud_metas[cloud_name] = meta
+                except Exception:
+                    continue
+
+        # 4. 先更新保存的meta（用于后续变化检测）
+        self.set_last_cloud_metas(cloud_metas)
+
+        # 5. 全量对比和同步
+        # 遍历云端meta，检查是否需要下载到本地
+        for cloud_name, meta in cloud_metas.items():
+            local_path = self.get_local_path(meta.relative_path)
+
+            # 检查本地是否存在
+            if not os.path.exists(local_path):
+                # 本地不存在，下载
+                self.download_from_cloud(cloud_name, meta)
+            else:
+                # 本地存在，比较sha256
+                local_sha256 = self._calc_sha256(local_path)
+                if local_sha256 != meta.sha256:
+                    # 内容不同，按时间戳判断
+                    local_mtime = int(os.stat(local_path).st_mtime)
+                    if meta.last_modified > local_mtime:
+                        # 云端更新，下载
+                        self.download_from_cloud(cloud_name, meta)
+                    # 否则保留本地
+
+        # 6. 对比并上传本地有而云端没有的文件
         for (local_root, relative_path), info in self.state._local_files.items():
             if info.deleted:
                 continue
@@ -126,8 +161,24 @@ class SyncEngine:
                 else:
                     self.atomic_upload(local_path, cloud_path, cloud_name)
 
+    def download_from_cloud(self, cloud_name: str, meta: FileMeta) -> None:
+        """
+        从云端下载文件到本地
+        """
+        # 1. 获取本地路径
+        relative_path = meta.relative_path
+        local_path = self.get_local_path(relative_path)
+
+        # 2. 确保目录存在
+        os.makedirs(os.path.dirname(local_path) or '.', exist_ok=True)
+
+        # 3. 云端文件路径
+        cloud_path = cloud_name  # cloud_name already includes the remote path
+
+        # 4. 原子下载
+        self.atomic_download(cloud_path, local_path, meta.sha256)
+
     def atomic_upload(self, local_path: str, cloud_path: str, cloud_name: str):
-        """原子上传文件到云端"""
         tmp_name = f"{cloud_name}.tmp"
         tmp_path = cloud_path + ".tmp"
 
