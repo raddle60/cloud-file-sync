@@ -1,7 +1,7 @@
 import os
 import time
 from typing import Tuple
-from cloud_file_sync.models.sync_pair import FileMeta
+from models.sync_pair import FileMeta
 
 class ConflictResolver:
     def generate_conflict_name(self, original_path: str, timestamp: int = None) -> str:

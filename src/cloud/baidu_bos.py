@@ -2,7 +2,7 @@ import os
 from typing import List
 from baidu.bce.bos import BosClient
 from baidu.bce.auth import Credentials, BceCredentials
-from cloud_file_sync.cloud.base import CloudStorage
+from cloud.base import CloudStorage
 
 class BaiduBOS(CloudStorage):
     def __init__(

@@ -2,8 +2,8 @@
 import pytest
 import tempfile
 import time
-from cloud_file_sync.storage.sync_state import SyncState
-from cloud_file_sync.models.sync_pair import FileMeta, SyncPair
+from storage.sync_state import SyncState
+from models.sync_pair import FileMeta, SyncPair
 
 def test_sync_state_add_file():
     state = SyncState()

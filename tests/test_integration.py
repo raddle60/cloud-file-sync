@@ -4,12 +4,12 @@ import tempfile
 import os
 import time
 from unittest.mock import Mock, patch, MagicMock
-from cloud_file_sync.config.config_loader import ConfigLoader
-from cloud_file_sync.core.crypto import CryptoManager, derive_key
-from cloud_file_sync.core.sync_engine import SyncEngine
-from cloud_file_sync.models.sync_pair import SyncPair
-from cloud_file_sync.storage.sync_state import SyncState
-from cloud_file_sync.cloud.base import CloudStorage
+from config.config_loader import ConfigLoader
+from core.crypto import CryptoManager, derive_key
+from core.sync_engine import SyncEngine
+from models.sync_pair import SyncPair
+from storage.sync_state import SyncState
+from cloud.base import CloudStorage
 
 class MockCloudStorage(CloudStorage):
     """Mock云端存储用于测试"""

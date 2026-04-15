@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List
 import json
 
-from cloud_file_sync.models.sync_pair import SyncPair, CloudType
+from models.sync_pair import SyncPair, CloudType
 
 @dataclass
 class Config:

@@ -2,8 +2,8 @@ import pytest
 import tempfile
 import time
 import os
-from cloud_file_sync.core.conflict_resolver import ConflictResolver
-from cloud_file_sync.models.sync_pair import FileMeta
+from core.conflict_resolver import ConflictResolver
+from models.sync_pair import FileMeta
 
 def test_generate_conflict_name():
     resolver = ConflictResolver()

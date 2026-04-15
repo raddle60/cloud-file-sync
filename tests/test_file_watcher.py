@@ -3,7 +3,7 @@ import tempfile
 import time
 import threading
 from unittest.mock import Mock, patch
-from cloud_file_sync.core.file_watcher import FileWatcher
+from core.file_watcher import FileWatcher
 
 def test_file_watcher_init():
     watcher = FileWatcher("/tmp", debounce_seconds=10)
@@ -12,7 +12,7 @@ def test_file_watcher_init():
 
 def test_file_watcher_debounce_timer():
     """测试防抖计时器"""
-    with patch('cloud_file_sync.core.file_watcher.Observer') as mock_observer:
+    with patch('core.file_watcher.Observer') as mock_observer:
         with tempfile.TemporaryDirectory() as tmpdir:
             callback = Mock()
             watcher = FileWatcher(tmpdir, debounce_seconds=1, callback=callback)
@@ -35,7 +35,7 @@ def test_file_watcher_debounce_timer():
             assert callback.call_count == 1
 
 def test_file_watcher_start_stop():
-    with patch('cloud_file_sync.core.file_watcher.Observer') as mock_observer:
+    with patch('core.file_watcher.Observer') as mock_observer:
         with tempfile.TemporaryDirectory() as tmpdir:
             mock_observer_instance = Mock()
             mock_observer.return_value = mock_observer_instance

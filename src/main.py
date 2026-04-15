@@ -2,13 +2,13 @@ import argparse
 import sys
 import signal
 import os
-from cloud_file_sync.config.config_loader import ConfigLoader
-from cloud_file_sync.core.crypto import derive_key, CryptoManager
-from cloud_file_sync.core.sync_engine import SyncEngine
-from cloud_file_sync.core.file_watcher import FileWatcher
-from cloud_file_sync.storage.sync_state import SyncState
-from cloud_file_sync.cloud.baidu_bos import BaiduBOS
-from cloud_file_sync.models.sync_pair import SyncPair, CloudType
+from config.config_loader import ConfigLoader
+from core.crypto import derive_key, CryptoManager
+from core.sync_engine import SyncEngine
+from core.file_watcher import FileWatcher
+from storage.sync_state import SyncState
+from cloud.baidu_bos import BaiduBOS
+from models.sync_pair import SyncPair, CloudType
 
 _global_watcher = None
 

@@ -8,7 +8,7 @@ sys.modules['baidu.bce'] = MagicMock()
 sys.modules['baidu.bce.bos'] = MagicMock()
 sys.modules['baidu.bce.auth'] = MagicMock()
 
-from cloud_file_sync.main import parse_args
+from main import parse_args
 
 def test_parse_args_start():
     args = parse_args(['start', '--config', 'config.json'])

@@ -2,9 +2,9 @@ import pytest
 import tempfile
 import json
 import os
-from cloud_file_sync.meta.meta_manager import MetaManager
-from cloud_file_sync.models.sync_pair import FileMeta
-from cloud_file_sync.core.crypto import CryptoManager, derive_key
+from meta.meta_manager import MetaManager
+from models.sync_pair import FileMeta
+from core.crypto import CryptoManager, derive_key
 
 def test_meta_to_dict():
     meta = FileMeta(

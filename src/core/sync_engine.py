@@ -2,13 +2,16 @@ import os
 import time
 import hashlib
 import shutil
+import logging
 from typing import Optional, Tuple, Dict, List
-from cloud_file_sync.models.sync_pair import SyncPair, FileMeta
-from cloud_file_sync.storage.sync_state import SyncState
-from cloud_file_sync.core.crypto import CryptoManager, derive_key
-from cloud_file_sync.core.conflict_resolver import ConflictResolver
-from cloud_file_sync.meta.meta_manager import MetaManager
-from cloud_file_sync.cloud.base import CloudStorage
+from models.sync_pair import SyncPair, FileMeta
+from storage.sync_state import SyncState
+from core.crypto import CryptoManager, derive_key
+from core.conflict_resolver import ConflictResolver
+from meta.meta_manager import MetaManager
+from cloud.base import CloudStorage
+
+logger = logging.getLogger(__name__)
 
 class SyncEngine:
     def __init__(
@@ -60,6 +63,10 @@ class SyncEngine:
 
         for dirpath, dirnames, filenames in os.walk(self.sync_pair.local):
             for filename in filenames:
+                # 跳过 .tmp 文件
+                if filename.endswith('.tmp'):
+                    continue
+
                 full_path = os.path.join(dirpath, filename)
                 relative_path = os.path.relpath(full_path, self.sync_pair.local)
 
@@ -90,13 +97,42 @@ class SyncEngine:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
+    def _check_local_unfinished_tmp(self, relative_path: str) -> bool:
+        """
+        检查本地是否存在未完成的tmp文件
+        如果本地存在 xxx.tmp 但对应的 xxx 文件正在被同步，说明有未完成的操作
+        返回 True 表示检测到未完成的tmp文件，应跳过上传
+        """
+        tmp_path = self.get_local_path(relative_path + '.tmp')
+        if os.path.exists(tmp_path):
+            logger.error(f"[ERROR] Sync interrupted: local file has unfinished tmp: {relative_path}.tmp")
+            return True
+        return False
+
+    def _check_cloud_unfinished_tmp(self, cloud_name: str) -> bool:
+        """
+        检查云端是否存在未完成的tmp文件
+        如果云端存在 xxx.tmp 但对应的 xxx 文件正在被下载，说明有未完成的操作
+        返回 True 表示检测到未完成的tmp文件，应跳过下载
+        """
+        cloud_tmp_path = cloud_name + '.tmp'
+        cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
+        for f in cloud_files:
+            # 获取文件名（不含路径）
+            fname = f.split('/')[-1]
+            if fname == cloud_tmp_path or f == cloud_tmp_path:
+                logger.error(f"[ERROR] Sync interrupted: cloud file has unfinished tmp: {cloud_name}.tmp")
+                return True
+        return False
+
     def full_sync(self):
         """执行全量同步"""
         # 1. 扫描本地文件
         self.scan_local_files()
 
-        # 2. 获取云端文件列表
+        # 2. 获取云端文件列表（过滤掉 .tmp 文件）
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
+        cloud_files = [f for f in cloud_files if not f.endswith('.tmp')]
 
         # 3. 解析云端meta文件，保存到内存
         cloud_metas = {}
@@ -117,6 +153,10 @@ class SyncEngine:
         # 遍历云端meta，检查是否需要下载到本地
         for cloud_name, meta in cloud_metas.items():
             local_path = self.get_local_path(meta.relative_path)
+
+            # 检查云端是否有未完成的 tmp 文件
+            if self._check_cloud_unfinished_tmp(cloud_name):
+                continue
 
             # 检查本地是否存在
             if not os.path.exists(local_path):
@@ -139,6 +179,10 @@ class SyncEngine:
                 continue
             cloud_name = info.cloud_name
             cloud_path = self.get_cloud_path(relative_path)
+
+            # 检查本地是否有未完成的 tmp 文件
+            if self._check_local_unfinished_tmp(relative_path):
+                continue
 
             # 检查云端是否已有该文件（通过实际云端列表）
             cloud_exists = any(f == cloud_path or f.endswith('/' + cloud_name) for f in cloud_files)
@@ -264,8 +308,9 @@ class SyncEngine:
         检查云端变化，返回有变化的文件列表
         返回格式: [{"type": "new"|"modified"|"deleted", "cloud_name": str, "meta": FileMeta}]
         """
-        # 1. 获取当前云端所有文件
+        # 1. 获取当前云端所有文件（过滤掉 .tmp 文件）
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
+        cloud_files = [f for f in cloud_files if not f.endswith('.tmp')]
 
         # 2. 解析meta文件
         current_metas: Dict[str, FileMeta] = {}
@@ -285,6 +330,10 @@ class SyncEngine:
 
         # 新增或修改
         for cloud_name, meta in current_metas.items():
+            # 检查云端是否有未完成的 tmp 文件
+            if self._check_cloud_unfinished_tmp(cloud_name):
+                continue
+
             if cloud_name not in last_metas:
                 changes.append({"type": "new", "cloud_name": cloud_name, "meta": meta})
             elif last_metas[cloud_name].sha256 != meta.sha256:

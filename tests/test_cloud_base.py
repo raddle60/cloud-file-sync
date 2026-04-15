@@ -1,6 +1,6 @@
 import pytest
 from abc import ABC
-from cloud_file_sync.cloud.base import CloudStorage
+from cloud.base import CloudStorage
 
 def test_cloud_storage_is_abc():
     """验证CloudStorage是抽象基类"""

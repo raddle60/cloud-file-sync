@@ -1,6 +1,6 @@
-# cloud_file_sync/storage/sync_state.py
+# src/storage/sync_state.py
 from typing import Dict, List, Optional, Tuple
-from cloud_file_sync.models.sync_pair import FileMeta
+from models.sync_pair import FileMeta
 
 class LocalFileInfo:
     """本地文件信息"""

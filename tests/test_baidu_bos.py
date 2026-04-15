@@ -8,11 +8,11 @@ sys.modules['baidu.bce'] = MagicMock()
 sys.modules['baidu.bce.bos'] = MagicMock()
 sys.modules['baidu.bce.auth'] = MagicMock()
 
-from cloud_file_sync.cloud.baidu_bos import BaiduBOS
+from cloud.baidu_bos import BaiduBOS
 
 @pytest.fixture
 def mock_bos_client():
-    with patch('cloud_file_sync.cloud.baidu_bos.BosClient') as mock:
+    with patch('cloud.baidu_bos.BosClient') as mock:
         yield mock
 
 def test_baidu_bos_init(mock_bos_client):

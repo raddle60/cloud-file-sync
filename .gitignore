@@ -45,3 +45,4 @@ Thumbs.db
 settings.local.json
 /nul
 .pytest_cache
+__pycache__

@@ -4,9 +4,9 @@ import time
 import os
 import hashlib
 from unittest.mock import Mock, patch, MagicMock
-from cloud_file_sync.core.sync_engine import SyncEngine
-from cloud_file_sync.models.sync_pair import SyncPair, FileMeta
-from cloud_file_sync.storage.sync_state import SyncState
+from core.sync_engine import SyncEngine
+from models.sync_pair import SyncPair, FileMeta
+from storage.sync_state import SyncState
 
 @pytest.fixture
 def temp_dirs():

@@ -9,14 +9,14 @@ cloud-file-sync is a bidirectional sync tool between local directories and cloud
 ## Common Commands
 
 ```bash
-# Run all tests
-pytest
+# Run all tests (src/ is the source root)
+PYTHONPATH=src pytest
 
 # Run specific test file
-pytest tests/test_sync_engine.py
+PYTHONPATH=src pytest tests/test_sync_engine.py
 
 # Run specific test
-pytest tests/test_sync_engine.py::test_cloud_name_generation_encrypted -v
+PYTHONPATH=src pytest tests/test_sync_engine.py::test_cloud_name_generation_encrypted -v
 ```
 
 ## Architecture
@@ -58,4 +58,4 @@ Baidu BOS credentials via env vars: `BOS_ACCESS_KEY_ID`, `BOS_ACCESS_KEY_SECRET`
 
 - watchdog>=3.0.0 - File system monitoring
 - bce-python-sdk>=0.9 - Baidu BOS SDK
-- pycryptodome>=3.18 - AES encryption
+- cryptography>=3.4 - AES encryption

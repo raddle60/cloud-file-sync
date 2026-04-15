@@ -1,8 +1,8 @@
 import json
 import os
 from typing import Optional
-from cloud_file_sync.models.sync_pair import FileMeta
-from cloud_file_sync.core.crypto import CryptoManager, derive_key
+from models.sync_pair import FileMeta
+from core.crypto import CryptoManager, derive_key
 
 class MetaManager:
     def __init__(self, encryption_enabled: bool, crypto: Optional[CryptoManager]):

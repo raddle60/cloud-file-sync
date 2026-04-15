@@ -1,7 +1,7 @@
 import pytest
 import tempfile
 import os
-from cloud_file_sync.core.crypto import CryptoManager, derive_key, hash_file
+from core.crypto import CryptoManager, derive_key, hash_file
 
 def test_encrypt_decrypt_small_file():
     key = derive_key("test-key-32-bytes-base64==")

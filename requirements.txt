@@ -1,0 +1,4 @@
+watchdog>=3.0.0
+bce-python-sdk>=0.9
+cryptography>=3.4
+pytest>=7.0
