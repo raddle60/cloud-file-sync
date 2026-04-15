@@ -1,5 +1,4 @@
 # cloud_file_sync/storage/sync_state.py
-import time
 from typing import Dict, List, Optional, Tuple
 from cloud_file_sync.models.sync_pair import FileMeta
 
@@ -92,18 +91,5 @@ class SyncState:
                     "meta": info.meta,
                     "cloud_name": info.cloud_name
                 })
-
-        return result
-
-    def scan_local_directory(self, local_root: str, remote_prefix: str) -> List[Tuple[str, str]]:
-        """扫描本地目录，返回 (relative_path, cloud_name) 列表"""
-        import os
-        result = []
-
-        for dirpath, dirnames, filenames in os.walk(local_root):
-            for filename in filenames:
-                full_path = os.path.join(dirpath, filename)
-                relative_path = os.path.relpath(full_path, local_root)
-                result.append((relative_path, full_path))
 
         return result
