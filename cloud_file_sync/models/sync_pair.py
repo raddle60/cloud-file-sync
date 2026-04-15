@@ -21,7 +21,8 @@ class FileMeta:
             "original_filename": self.original_filename,
             "size": self.size,
             "last_modified": self.last_modified,
-            "sha256": self.sha256
+            "sha256": self.sha256,
+            "relative_path": self.relative_path
         }
 
     @classmethod
@@ -30,5 +31,6 @@ class FileMeta:
             original_filename=data["original_filename"],
             size=data["size"],
             last_modified=data["last_modified"],
-            sha256=data["sha256"]
+            sha256=data["sha256"],
+            relative_path=data.get("relative_path", "")
         )
