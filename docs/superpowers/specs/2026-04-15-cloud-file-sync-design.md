@@ -29,12 +29,12 @@
 
 ```
 cloud_file_sync/
-├── main.py                     # 程序入口
+├── main.py                     # 程序入口（一个进程一个配置一个engine）
 ├── config/
-│   └── config_loader.py        # 配置文件加载
+│   └── config_loader.py        # 配置文件加载，含云端路径冲突验证
 ├── core/
-│   ├── sync_engine.py          # 同步核心引擎
-│   ├── file_watcher.py         # 文件监听（debounce 10s）
+│   ├── sync_engine.py          # 同步核心引擎（一个配置文件一个实例）
+│   ├── file_watcher.py         # 文件监听（debounce 10s）+ 周期性云端检查（60s）
 │   ├── crypto.py               # AES-256-GCM 加解密
 │   └── conflict_resolver.py    # 冲突处理
 ├── cloud/
@@ -43,10 +43,16 @@ cloud_file_sync/
 ├── models/
 │   └── sync_pair.py            # 同步对数据模型
 ├── meta/
-│   └── meta_manager.py         # Meta文件管理
+│   └── meta_manager.py          # Meta文件管理
 └── storage/
     └── sync_state.py           # 本地同步状态（内存）
 ```
+
+**架构约束**:
+- 一个进程只处理一个配置文件
+- 一个配置文件只创建一个 SyncEngine 实例
+- 所有 sync_pairs 共用同一个 SyncState 和云端适配器
+- 云端路径冲突检测在启动时完成
 
 ---
 
@@ -54,6 +60,7 @@ cloud_file_sync/
 
 ```json
 {
+  "cloud_type": "baidu_bos",
   "encryption_enabled": true,
   "encryption_key": "your-32-byte-base64-key",
   "sync_pairs": [
@@ -66,10 +73,15 @@ cloud_file_sync/
 ```
 
 **字段说明**:
+- `cloud_type`: 云端引擎类型（如 `baidu_bos`），同一配置文件中必须为同一个云端
 - `encryption_enabled`: 是否启用加密（同时影响文件名hash和文件内容加密）
 - `encryption_key`: Base64编码的32字节密钥
 - `sync_pairs`: 同步对列表，支持多目录映射
 - 所有同步对共用同一加密密钥
+
+**约束**:
+- 同一配置文件中的所有 `sync_pairs` 必须映射到不同的云端路径
+- 如果两个 `sync_pairs` 的 `remote` 路径在同一个云端目录下，启动时报错并退出
 
 ---
 
@@ -130,12 +142,13 @@ cloud_file_sync/
 
 ```
 1. 加载配置文件
-2. 初始化云端存储适配器
-3. 扫描本地所有文件（递归）
-4. 下载云端所有meta文件
-5. 全量对比：本地 vs 云端
-6. 执行同步（新增/覆盖/删除）
-7. 进入Daemon监听模式
+2. 验证 sync_pairs 中的 remote 路径不冲突（同一云端目录下不能有多个映射）
+3. 初始化云端存储适配器
+4. 扫描本地所有文件（递归）
+5. 下载云端所有meta文件到内存
+6. 全量对比：本地 vs 云端
+7. 执行同步（新增/覆盖/删除）
+8. 进入Daemon监听模式
 ```
 
 ### 7.2 全量对比逻辑
@@ -151,8 +164,25 @@ cloud_file_sync/
 
 - 使用文件系统监控（如 `watchdog` 库）
 - 检测到文件变化后，重置10秒计时器
-- 10秒内无新变化，触发同步
-- 同步完成后继续监听
+- 10秒内无新变化，触发**增量上传**（只同步变化的本地文件）
+- 同时每**60秒**执行一次**云端变更检查**：
+  1. 下载当前云端所有meta文件
+  2. 与内存中保存的上次云端meta信息对比
+  3. 只对有变化的文件与本地文件进行比较和同步
+  4. 更新内存中保存的云端meta信息
+
+### 7.4 云端变更检查流程（每60秒）
+
+```
+1. 获取当前云端所有meta文件
+2. 与内存中的上次云端meta对比
+3. 找出有变化的meta（新增/修改/删除）
+4. 对有变化的文件与本地对比：
+   - 云端新增：下载到本地
+   - 云端修改：按时间戳判断是否覆盖本地
+   - 云端删除：删除本地文件，保留meta
+5. 更新内存中的云端meta信息
+```
 
 ---
 
@@ -361,3 +391,4 @@ pycryptodome>=3.18   # AES加密
 6. 云端目录永不删除（即使本地对应目录已删除）
 7. 本地删除文件后会同步删除云端文件，但meta文件和目录结构保留在云端
 8. 若云端文件已删除，且云端剩余meta文件也被手动删除，将无法同步删除操作；另一客户端若有该文件，将重新上传
+9. 同一配置文件中的多个 sync_pairs 的 remote 路径不能相互包含或重叠，否则启动时报错
