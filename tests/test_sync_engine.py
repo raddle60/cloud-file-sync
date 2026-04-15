@@ -2,6 +2,7 @@ import pytest
 import tempfile
 import time
 import os
+import hashlib
 from unittest.mock import Mock, patch, MagicMock
 from cloud_file_sync.core.sync_engine import SyncEngine
 from cloud_file_sync.models.sync_pair import SyncPair, FileMeta
@@ -35,7 +36,8 @@ def test_cloud_name_generation_encrypted():
     engine = SyncEngine(sync_pair, state, None, None, None)
 
     name = engine.get_cloud_name("test.txt")
-    assert name == "sha256(test.txt)"
+    assert name == hashlib.sha256("test.txt".encode()).hexdigest()
+    assert len(name) == 64  # sha256 hex digest is 64 characters
 
 def test_cloud_name_generation_plain():
     """测试非加密模式云端文件名"""

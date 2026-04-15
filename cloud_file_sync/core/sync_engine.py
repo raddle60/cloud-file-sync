@@ -33,7 +33,7 @@ class SyncEngine:
     def get_cloud_name(self, filename: str) -> str:
         """生成云端文件名"""
         if self.sync_pair.encryption_enabled:
-            return f"sha256({filename})"
+            return hashlib.sha256(filename.encode()).hexdigest()
         return filename
 
     def get_cloud_path(self, relative_path: str) -> str:
