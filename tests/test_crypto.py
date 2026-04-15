@@ -1,7 +1,7 @@
 import pytest
 import tempfile
 import os
-from cloud_file_sync.core.crypto import CryptoManager, derive_key
+from cloud_file_sync.core.crypto import CryptoManager, derive_key, hash_file
 
 def test_encrypt_decrypt_small_file():
     key = derive_key("test-key-32-bytes-base64==")
@@ -57,3 +57,16 @@ def test_derive_key():
     key2 = derive_key("password123")
     assert key1 == key2
     assert len(key1) == 32
+
+def test_hash_file():
+    import hashlib
+    original_data = b"Hello, World!"
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        f.write(original_data)
+        file_path = f.name
+
+    try:
+        expected_hash = hashlib.sha256(original_data).hexdigest()
+        assert hash_file(file_path) == expected_hash
+    finally:
+        os.unlink(file_path)

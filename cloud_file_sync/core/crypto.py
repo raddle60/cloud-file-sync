@@ -7,6 +7,15 @@ def derive_key(password: str) -> bytes:
     """从密码派生32字节密钥"""
     return hashlib.sha256(password.encode()).digest()
 
+def hash_file(file_path: str) -> str:
+    """计算文件SHA256哈希"""
+    sha256 = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        for chunk in iter(lambda: f.read(8192), b''):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
 class CryptoManager:
     def __init__(self, key: bytes):
         if len(key) != 32:
@@ -41,11 +50,3 @@ class CryptoManager:
         decrypted = self.decrypt_data(encrypted_data)
         with open(output_path, 'wb') as f:
             f.write(decrypted)
-
-    def hash_file(self, file_path: str) -> str:
-        """计算文件SHA256哈希"""
-        sha256 = hashlib.sha256()
-        with open(file_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
