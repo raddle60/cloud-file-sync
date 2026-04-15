@@ -2,7 +2,7 @@ import os
 import time
 import hashlib
 import shutil
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 from cloud_file_sync.models.sync_pair import SyncPair, FileMeta
 from cloud_file_sync.storage.sync_state import SyncState
 from cloud_file_sync.core.crypto import CryptoManager, derive_key
@@ -29,6 +29,7 @@ class SyncEngine:
             encryption_enabled=sync_pair.encryption_enabled,
             crypto=crypto
         )
+        self._last_cloud_metas: Dict[str, FileMeta] = {}
 
     def get_cloud_name(self, filename: str) -> str:
         """生成云端文件名"""
@@ -110,17 +111,17 @@ class SyncEngine:
                 # 上传文件
                 local_path = self.get_local_path(relative_path)
                 if self.sync_pair.encryption_enabled and self.crypto:
-                    # 加密上传
+                    # 加密上传 - 使用cloud_name(hash)作为云端文件名
+                    encrypted_cloud_path = self.sync_pair.remote.rstrip('/') + '/' + cloud_name
                     tmp_encrypted = local_path + ".enc"
                     self.crypto.encrypt_file(local_path, tmp_encrypted)
-                    self.atomic_upload(tmp_encrypted, cloud_path, cloud_name)
+                    self.atomic_upload(tmp_encrypted, encrypted_cloud_path, cloud_name)
                     os.unlink(tmp_encrypted)
 
-                    # 上传meta文件
+                    # 上传meta文件 - 使用cloud_name.hash作为云端meta文件名
                     meta_path = local_path + ".meta"
                     self.meta_manager.write_meta(meta_path, info.meta)
-                    meta_cloud_path = cloud_path + ".meta"
-                    self.atomic_upload(meta_path, meta_cloud_path, cloud_name + ".meta")
+                    self.atomic_upload(meta_path, encrypted_cloud_path + ".meta", cloud_name + ".meta")
                     os.unlink(meta_path)
                 else:
                     self.atomic_upload(local_path, cloud_path, cloud_name)
@@ -176,3 +177,74 @@ class SyncEngine:
         else:
             os.unlink(tmp_path)
             raise ValueError(f"Download verification failed for {local_path}")
+
+    def get_last_cloud_metas(self) -> Dict[str, FileMeta]:
+        """获取内存中保存的上次云端meta信息"""
+        return self._last_cloud_metas.copy()
+
+    def set_last_cloud_metas(self, metas: Dict[str, FileMeta]):
+        """更新内存中保存的云端meta信息"""
+        self._last_cloud_metas = metas.copy()
+
+    def _download_and_read_meta(self, meta_path: str) -> FileMeta:
+        """下载并解析meta文件"""
+        import tempfile
+        import os
+
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            self.cloud_storage.download_file(meta_path, tmp_path)
+
+            if self.sync_pair.encryption_enabled and self.crypto:
+                decrypted_tmp = tmp_path + ".dec"
+                self.crypto.decrypt_file(tmp_path, decrypted_tmp)
+                os.unlink(tmp_path)
+                tmp_path = decrypted_tmp
+
+            return self.meta_manager.read_meta(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def check_cloud_changes(self) -> List[Dict]:
+        """
+        检查云端变化，返回有变化的文件列表
+        返回格式: [{"type": "new"|"modified"|"deleted", "cloud_name": str, "meta": FileMeta}]
+        """
+        # 1. 获取当前云端所有文件
+        cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
+
+        # 2. 解析meta文件
+        current_metas: Dict[str, FileMeta] = {}
+        for f in cloud_files:
+            if f.endswith('.meta.json'):
+                try:
+                    meta = self._download_and_read_meta(f)
+                    # 从meta中获取原始cloud_name（去掉.meta.json后缀）
+                    cloud_name = f[:-len('.meta.json')]
+                    current_metas[cloud_name] = meta
+                except Exception:
+                    continue
+
+        # 3. 与上次保存的meta对比
+        last_metas = self.get_last_cloud_metas()
+        changes: List[Dict] = []
+
+        # 新增或修改
+        for cloud_name, meta in current_metas.items():
+            if cloud_name not in last_metas:
+                changes.append({"type": "new", "cloud_name": cloud_name, "meta": meta})
+            elif last_metas[cloud_name].sha256 != meta.sha256:
+                changes.append({"type": "modified", "cloud_name": cloud_name, "meta": meta})
+
+        # 删除
+        for cloud_name in last_metas:
+            if cloud_name not in current_metas:
+                changes.append({"type": "deleted", "cloud_name": cloud_name, "meta": last_metas[cloud_name]})
+
+        # 4. 更新保存的meta
+        self.set_last_cloud_metas(current_metas)
+
+        return changes
