@@ -1,0 +1,47 @@
+# maven ignore
+target/
+**/WEB-INF/classes/
+*.jar
+*.war
+*.zip
+*.tar
+.flattened-*
+
+# eclipse ignore
+.settings/
+.project
+.classpath
+
+# idea ignore
+.idea/
+*.ipr
+*.iml
+*.iws
+
+# temp ignore
+logs/
+*.doc
+*.log
+*.cache
+*.diff
+*.patch
+*.tmp
+*.versionsBackup
+
+# system ignore
+.DS_Store
+Thumbs.db
+
+.vscode/
+
+
+#环境信息不提交
+*.env
+
+# idea ignore
+.jarvis/
+/.claude/
+
+settings.local.json
+/nul
+.pytest_cache
