@@ -76,3 +76,31 @@ def test_rename_file(mock_bos_client):
 
     mock_client_instance.copy_object.assert_called_once()
     mock_client_instance.delete_object.assert_called_once()
+
+def test_get_file_hash(mock_bos_client):
+    mock_client_instance = MagicMock()
+    mock_bos_client.return_value = mock_client_instance
+
+    mock_client_instance.get_object_metadata.return_value = MagicMock(
+        metadata={'x-bce-content-sha256': 'abc123hash'}
+    )
+
+    bos = BaiduBOS("id", "secret", "endpoint", "bucket")
+    hash_result = bos.get_file_hash("remote/path.txt")
+
+    assert hash_result == "abc123hash"
+    mock_client_instance.get_object_metadata.assert_called_once_with("bucket", "remote/path.txt")
+
+def test_get_file_size(mock_bos_client):
+    mock_client_instance = MagicMock()
+    mock_bos_client.return_value = mock_client_instance
+
+    mock_client_instance.get_object_metadata.return_value = MagicMock(
+        metadata={'Content-Length': '1024'}
+    )
+
+    bos = BaiduBOS("id", "secret", "endpoint", "bucket")
+    size_result = bos.get_file_size("remote/path.txt")
+
+    assert size_result == 1024
+    mock_client_instance.get_object_metadata.assert_called_once_with("bucket", "remote/path.txt")
