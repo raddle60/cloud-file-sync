@@ -1,5 +1,9 @@
 from dataclasses import dataclass
 from typing import Optional
+from enum import Enum
+
+class CloudType(Enum):
+    BAIDU_BOS = "baidu_bos"
 
 @dataclass
 class SyncPair:
