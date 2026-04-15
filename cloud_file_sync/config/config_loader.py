@@ -2,10 +2,7 @@ from dataclasses import dataclass, field
 from typing import List
 import json
 
-@dataclass
-class SyncPair:
-    local: str
-    remote: str
+from cloud_file_sync.models.sync_pair import SyncPair
 
 @dataclass
 class Config:

@@ -3,6 +3,7 @@ import json
 import tempfile
 import os
 from cloud_file_sync.config.config_loader import ConfigLoader, Config
+from cloud_file_sync.models.sync_pair import SyncPair
 
 def test_load_config_success():
     config_data = {
