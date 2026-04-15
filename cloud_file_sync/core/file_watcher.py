@@ -47,19 +47,53 @@ class DebouncedFileHandler(FileSystemEventHandler):
         if files and self.callback:
             self.callback(files)
 
+class PeriodicChecker:
+    """周期性任务检查器"""
+    def __init__(self, interval_seconds: float, callback):
+        self.interval = interval_seconds
+        self.callback = callback
+        self._stop_event = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def _run(self):
+        while not self._stop_event.is_set():
+            time.sleep(self.interval)
+            if not self._stop_event.is_set():
+                self.callback()
+
 class FileWatcher:
-    def __init__(self, watch_path: str, debounce_seconds: float = 10.0, callback=None):
+    def __init__(self, watch_path: str, debounce_seconds: float = 10.0,
+                 callback=None, periodic_callback=None, periodic_interval: float = 60.0):
         self.watch_path = watch_path
         self.debounce_seconds = debounce_seconds
         self.callback = callback
+        self.periodic_callback = periodic_callback
+        self.periodic_interval = periodic_interval
         self._observer = Observer()
         self._handler = DebouncedFileHandler(callback, debounce_seconds)
+        self.periodic_checker = None
+        if periodic_callback:
+            self.periodic_checker = PeriodicChecker(periodic_interval, periodic_callback)
 
     def start(self):
         self._observer.schedule(self._handler, self.watch_path, recursive=True)
         self._observer.start()
+        if self.periodic_checker:
+            self.periodic_checker.start()
 
     def stop(self):
+        if self.periodic_checker:
+            self.periodic_checker.stop()
         self._observer.stop()
         self._observer.join()
 
