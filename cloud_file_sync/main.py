@@ -8,7 +8,7 @@ from cloud_file_sync.core.sync_engine import SyncEngine
 from cloud_file_sync.core.file_watcher import FileWatcher
 from cloud_file_sync.storage.sync_state import SyncState
 from cloud_file_sync.cloud.baidu_bos import BaiduBOS
-from cloud_file_sync.models.sync_pair import SyncPair
+from cloud_file_sync.models.sync_pair import SyncPair, CloudType
 
 _global_watcher = None
 
@@ -28,16 +28,19 @@ def parse_args(args=None):
     return parser.parse_args(args)
 
 def create_cloud_storage(config):
-    """创建云端存储实例"""
+    """根据 cloud_type 创建云端存储实例"""
     if not config.sync_pairs:
         raise ValueError("No sync_pairs configured")
 
-    return BaiduBOS(
-        access_key_id=os.environ.get('BOS_ACCESS_KEY_ID', ''),
-        access_key_secret=os.environ.get('BOS_ACCESS_KEY_SECRET', ''),
-        endpoint=os.environ.get('BOS_ENDPOINT', ''),
-        bucket_name=config.sync_pairs[0].remote.split('/')[0]
-    )
+    if config.cloud_type == CloudType.BAIDU_BOS:
+        return BaiduBOS(
+            access_key_id=os.environ.get('BOS_ACCESS_KEY_ID', ''),
+            access_key_secret=os.environ.get('BOS_ACCESS_KEY_SECRET', ''),
+            endpoint=os.environ.get('BOS_ENDPOINT', ''),
+            bucket_name=config.sync_pairs[0].remote.split('/')[0]
+        )
+    else:
+        raise ValueError(f"Unsupported cloud_type: {config.cloud_type}")
 
 def start_sync(config_path: str, daemon: bool = False):
     global _global_watcher
@@ -45,6 +48,9 @@ def start_sync(config_path: str, daemon: bool = False):
     # 加载配置
     loader = ConfigLoader(config_path)
     config = loader.load()
+
+    # 验证 remote 路径不冲突
+    config.validate_remote_paths()
 
     # 创建加密管理器
     crypto = None
@@ -79,11 +85,26 @@ def start_sync(config_path: str, daemon: bool = False):
         for engine in engines:
             engine.full_sync()
 
+    def on_periodic_check():
+        for engine in engines:
+            changes = engine.check_cloud_changes()
+            for change in changes:
+                if change['type'] == 'new':
+                    engine.download_from_cloud(change['cloud_name'], change['meta'])
+                elif change['type'] == 'modified':
+                    # 比较本地和云端，决定是否下载
+                    pass
+                elif change['type'] == 'deleted':
+                    # 删除本地文件
+                    pass
+
     # 创建文件监听器
     _global_watcher = FileWatcher(
         watch_path=config.sync_pairs[0].local,
         debounce_seconds=10.0,
-        callback=on_file_changed
+        callback=on_file_changed,
+        periodic_callback=on_periodic_check,
+        periodic_interval=60.0
     )
 
     # 执行初始全量同步
