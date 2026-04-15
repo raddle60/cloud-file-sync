@@ -97,8 +97,33 @@ class SyncEngine:
         # 2. 获取云端文件列表
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
 
-        # 3. 下载云端meta文件并对比
-        # TODO: 实现详细的同步逻辑
+        # 3. 对比并上传本地有而云端没有的文件
+        for (local_root, relative_path), info in self.state._local_files.items():
+            if info.deleted:
+                continue
+            cloud_name = info.cloud_name
+            cloud_path = self.get_cloud_path(relative_path)
+
+            # 检查云端是否已有该文件（通过实际云端列表）
+            cloud_exists = any(f == cloud_path or f.endswith('/' + cloud_name) for f in cloud_files)
+            if not cloud_exists:
+                # 上传文件
+                local_path = self.get_local_path(relative_path)
+                if self.sync_pair.encryption_enabled and self.crypto:
+                    # 加密上传
+                    tmp_encrypted = local_path + ".enc"
+                    self.crypto.encrypt_file(local_path, tmp_encrypted)
+                    self.atomic_upload(tmp_encrypted, cloud_path, cloud_name)
+                    os.unlink(tmp_encrypted)
+
+                    # 上传meta文件
+                    meta_path = local_path + ".meta"
+                    self.meta_manager.write_meta(meta_path, info.meta)
+                    meta_cloud_path = cloud_path + ".meta"
+                    self.atomic_upload(meta_path, meta_cloud_path, cloud_name + ".meta")
+                    os.unlink(meta_path)
+                else:
+                    self.atomic_upload(local_path, cloud_path, cloud_name)
 
     def atomic_upload(self, local_path: str, cloud_path: str, cloud_name: str):
         """原子上传文件到云端"""
