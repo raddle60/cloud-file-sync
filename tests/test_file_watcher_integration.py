@@ -393,7 +393,7 @@ class TestFileWatcherIntegration:
         """场景11：FileWatcher检测本地文件变化"""
         changes_detected = []
 
-        def on_changes(files):
+        def on_changes(watch_path, files):
             changes_detected.extend(files)
 
         # 创建FileWatcher
@@ -440,7 +440,7 @@ class TestFileWatcherIntegration:
         cloud_check_count = 0
         local_changes = []
 
-        def on_local_changes(files):
+        def on_local_changes(watch_path, files):
             local_changes.extend(files)
 
         def on_cloud_check():

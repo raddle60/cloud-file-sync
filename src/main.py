@@ -88,9 +88,11 @@ def start_sync(config_path: str, daemon: bool = False):
         )
         engines.append(engine)
 
-    def on_file_changed(files):
+    def on_file_changed(watch_path, files):
         for engine in engines:
-            engine.full_sync()
+            if engine.sync_pair.local == watch_path:
+                engine.incremental_sync(files)
+                break
 
     def on_periodic_check():
         for engine in engines:

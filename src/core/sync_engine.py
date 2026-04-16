@@ -32,7 +32,7 @@ class SyncEngine:
             encryption_enabled=sync_pair.encryption_enabled,
             crypto=crypto
         )
-        self._last_cloud_metas: Dict[str, FileMeta] = {}
+        self._local_metas: Dict[str, FileMeta] = {}  # 本地文件meta信息，key为relative_path
 
     def get_cloud_name(self, filename: str) -> str:
         """生成云端文件名"""
@@ -88,6 +88,8 @@ class SyncEngine:
                     meta,
                     cloud_name
                 )
+                # 更新本地meta
+                self._local_metas[relative_path] = meta
 
     def _calc_sha256(self, file_path: str) -> str:
         """计算文件SHA256"""
@@ -96,6 +98,18 @@ class SyncEngine:
             for chunk in iter(lambda: f.read(8192), b''):
                 sha256.update(chunk)
         return sha256.hexdigest()
+
+    def _calc_file_meta(self, file_path: str, filename: str, relative_path: str) -> FileMeta:
+        """从文件计算meta信息"""
+        stat = os.stat(file_path)
+        sha256 = self._calc_sha256(file_path)
+        return FileMeta(
+            original_filename=filename,
+            size=stat.st_size,
+            last_modified=int(stat.st_mtime),
+            sha256=sha256,
+            relative_path=relative_path
+        )
 
     def _check_local_unfinished_tmp(self, relative_path: str) -> bool:
         """
@@ -145,10 +159,7 @@ class SyncEngine:
                 except Exception:
                     continue
 
-        # 4. 先更新保存的meta（用于后续变化检测）
-        self.set_last_cloud_metas(cloud_metas)
-
-        # 5. 全量对比和同步
+        # 4. 全量对比和同步
         # 遍历云端meta，检查是否需要下载到本地
         for cloud_name, meta in cloud_metas.items():
             local_path = self.get_local_path(meta.relative_path)
@@ -227,6 +238,14 @@ class SyncEngine:
         # 4. 原子下载
         self.atomic_download(cloud_path, local_path, meta.sha256)
 
+        # 5. 从下载的文件重新生成meta
+        downloaded_meta = self._calc_file_meta(local_path, os.path.basename(local_path), relative_path)
+
+        # 6. 更新本地状态
+        self.state.add_file(self.sync_pair.local, self.sync_pair.remote, downloaded_meta, cloud_name)
+        # 7. 更新本地文件meta
+        self._local_metas[relative_path] = downloaded_meta
+
     def atomic_upload(self, local_path: str, cloud_path: str, cloud_name: str):
         tmp_name = f"{cloud_name}.tmp"
         tmp_path = cloud_path + ".tmp"
@@ -278,13 +297,14 @@ class SyncEngine:
             os.unlink(tmp_path)
             raise ValueError(f"Download verification failed for {local_path}")
 
-    def get_last_cloud_metas(self) -> Dict[str, FileMeta]:
-        """获取内存中保存的上次云端meta信息"""
-        return self._last_cloud_metas.copy()
-
-    def set_last_cloud_metas(self, metas: Dict[str, FileMeta]):
-        """更新内存中保存的云端meta信息"""
-        self._last_cloud_metas = metas.copy()
+    def _get_cloud_meta(self, cloud_name: str) -> Optional[FileMeta]:
+        """从云端获取指定文件的meta信息"""
+        cloud_path = self.get_cloud_path(cloud_name)
+        meta_path = cloud_path + ".meta.json"
+        try:
+            return self._download_and_read_meta(meta_path)
+        except Exception:
+            return None
 
     def _download_and_read_meta(self, meta_path: str) -> FileMeta:
         """下载并解析meta文件"""
@@ -342,27 +362,183 @@ class SyncEngine:
                 except Exception:
                     continue
 
-        # 3. 与上次保存的meta对比
-        last_metas = self.get_last_cloud_metas()
         changes: List[Dict] = []
 
-        # 新增或修改
+        # 3. 与本地meta对比
         for cloud_name, meta in current_metas.items():
             # 检查云端是否有未完成的 tmp 文件
             if self._check_cloud_unfinished_tmp(cloud_name):
                 continue
 
-            if cloud_name not in last_metas:
+            local_meta = self._local_metas.get(meta.relative_path)
+            if local_meta is None:
+                # 本地没有，视为新增
                 changes.append({"type": "new", "cloud_name": cloud_name, "meta": meta})
-            elif last_metas[cloud_name].sha256 != meta.sha256:
-                changes.append({"type": "modified", "cloud_name": cloud_name, "meta": meta})
+            elif local_meta.sha256 != meta.sha256:
+                # 内容不同
+                if meta.last_modified > local_meta.last_modified:
+                    changes.append({"type": "modified", "cloud_name": cloud_name, "meta": meta})
 
-        # 删除
-        for cloud_name in last_metas:
-            if cloud_name not in current_metas:
-                changes.append({"type": "deleted", "cloud_name": cloud_name, "meta": last_metas[cloud_name]})
-
-        # 4. 更新保存的meta
-        self.set_last_cloud_metas(current_metas)
+        # 注：删除检测需要缓存云端状态，暂不支持
 
         return changes
+
+    def incremental_sync(self, changed_files: List[str]):
+        """
+        增量同步变更的文件列表
+
+        Args:
+            changed_files: 变更文件的绝对路径列表
+        """
+        import time
+        from datetime import datetime
+
+        for file_path in changed_files:
+            # 跳过 .tmp 文件
+            if file_path.endswith('.tmp'):
+                continue
+
+            # 计算 relative_path
+            relative_path = os.path.relpath(file_path, self.sync_pair.local)
+
+            if not os.path.exists(file_path):
+                # 文件已删除，标记删除状态
+                self.state.mark_local_deleted(
+                    self.sync_pair.local,
+                    relative_path,
+                    int(time.time())
+                )
+                # 获取本地meta用于后续比较（需要在移除前获取）
+                local_meta = self._local_metas.get(relative_path)
+                # 从本地meta中移除
+                self._local_metas.pop(relative_path, None)
+                # 检查云端是否有该文件（通过meta文件），满足条件则删除云端文件（保留meta）
+                cloud_name = self.get_cloud_name(os.path.basename(relative_path))
+                cloud_meta = self._get_cloud_meta(cloud_name)
+                if cloud_meta is not None and local_meta is not None:
+                    # 只有sha256相同且本地时间>=云端时间才删除
+                    if local_meta.sha256 == cloud_meta.sha256 and local_meta.last_modified >= cloud_meta.last_modified:
+                        cloud_path = self.get_cloud_path(relative_path)
+                        # 删除云端文件（meta文件永不删除）
+                        self.cloud_storage.delete_file(cloud_path)
+                        logger.info(f"[INFO] Deleted cloud file: {cloud_path}")
+            else:
+                # 文件新增或修改
+                stat = os.stat(file_path)
+                local_sha256 = self._calc_sha256(file_path)
+                local_mtime = int(stat.st_mtime)
+                cloud_name = self.get_cloud_name(os.path.basename(file_path))
+
+                # 检查本地是否有未完成的 tmp 文件
+                if self._check_local_unfinished_tmp(relative_path):
+                    continue
+
+                # 检查云端是否有对应的 meta 文件
+                cloud_meta = self._get_cloud_meta(cloud_name)
+
+                if cloud_meta is None:
+                    # 云端没有该文件，直接上传
+                    self._upload_file(file_path, relative_path, cloud_name, local_sha256, local_mtime)
+                else:
+                    # 云端有该文件，比较时间戳
+                    if local_mtime > cloud_meta.last_modified:
+                        # 本地更新，上传覆盖
+                        self._upload_file(file_path, relative_path, cloud_name, local_sha256, local_mtime)
+                    elif local_mtime < cloud_meta.last_modified:
+                        # 云端更新，冲突处理
+                        self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256, local_mtime)
+                    else:
+                        # 时间戳相同但仍触发变更，说明内容不同，也是冲突
+                        if local_sha256 != cloud_meta.sha256:
+                            self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256, local_mtime)
+
+    def _handle_conflict(self, local_path: str, relative_path: str, cloud_name: str,
+                         cloud_meta: 'FileMeta', local_sha256: str, local_mtime: int):
+        """
+        处理文件冲突
+
+        Args:
+            local_path: 本地文件路径
+            relative_path: 相对路径
+            cloud_name: 云端文件名
+            cloud_meta: 云端meta信息
+            local_sha256: 本地文件sha256
+            local_mtime: 本地文件最后修改时间
+        """
+        from datetime import datetime
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        local_filename = os.path.basename(local_path)
+        name, ext = os.path.splitext(local_filename)
+
+        if cloud_meta.sha256 == local_sha256:
+            # 内容相同，只是时间戳记录误差，忽略
+            logger.info(f"[INFO] File content same, ignoring timestamp difference: {local_path}")
+            return
+
+        # 本地文件重命名
+        conflict_local_name = f"{name}.conflict-{timestamp}{ext}"
+        conflict_local_path = os.path.join(os.path.dirname(local_path), conflict_local_name)
+        os.rename(local_path, conflict_local_path)
+        logger.info(f"[INFO] Renamed local file to: {conflict_local_name}")
+
+        # 下载云端文件到本地原位置
+        cloud_path = self.get_cloud_path(relative_path)
+        self.download_from_cloud(cloud_name, cloud_meta)
+        logger.info(f"[INFO] Downloaded cloud file to: {local_path}")
+
+        # 上传重命名后的本地文件到云端
+        cloud_conflict_name = cloud_name + f".conflict-{timestamp}"
+        self._upload_file(conflict_local_path, relative_path, cloud_conflict_name,
+                         self._calc_sha256(conflict_local_path),
+                         int(os.stat(conflict_local_path).st_mtime))
+        logger.info(f"[INFO] Uploaded conflict file to cloud: {cloud_conflict_name}")
+
+    def _upload_file(self, file_path: str, relative_path: str, cloud_name: str,
+                    sha256: str, mtime: int):
+        """
+        上传文件到云端
+
+        Args:
+            file_path: 本地文件路径
+            relative_path: 相对路径
+            cloud_name: 云端文件名
+            sha256: 文件sha256
+            mtime: 最后修改时间
+        """
+        cloud_path = self.get_cloud_path(relative_path)
+
+        # 从文件重新生成meta
+        meta = self._calc_file_meta(file_path, os.path.basename(file_path), relative_path)
+
+        # 更新状态
+        self.state.add_file(self.sync_pair.local, self.sync_pair.remote, meta, cloud_name)
+        # 更新本地文件meta
+        self._local_metas[relative_path] = meta
+
+        # 上传文件
+        if self.sync_pair.encryption_enabled and self.crypto:
+            encrypted_cloud_path = cloud_path
+            tmp_encrypted = file_path + ".enc"
+            self.crypto.encrypt_file(file_path, tmp_encrypted)
+            self.atomic_upload(tmp_encrypted, encrypted_cloud_path, cloud_name)
+            os.unlink(tmp_encrypted)
+
+            # 上传meta
+            meta_path = file_path + ".meta.json"
+            self.meta_manager.write_meta(meta_path, meta)
+            self.atomic_upload(meta_path, encrypted_cloud_path + ".meta.json", cloud_name + ".meta.json")
+            os.unlink(meta_path)
+        else:
+            self.atomic_upload(file_path, cloud_path, cloud_name)
+            # 上传meta
+            meta_path = file_path + ".meta.json"
+            self.meta_manager.write_meta(meta_path, meta)
+            self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")
+            os.unlink(meta_path)
+            meta_path = file_path + ".meta.json"
+            self.meta_manager.write_meta(meta_path, meta)
+            self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")
+            os.unlink(meta_path)
+
+        logger.info(f"[INFO] Uploaded: {cloud_path}")
