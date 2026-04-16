@@ -3,7 +3,7 @@ from typing import List
 
 class CloudStorage(ABC):
     @abstractmethod
-    def list_files(self, prefix: str = "") -> List[str]:
+    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> List[str]:
         """列出云端所有文件"""
         pass
 

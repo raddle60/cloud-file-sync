@@ -46,3 +46,4 @@ settings.local.json
 /nul
 .pytest_cache
 __pycache__
+mock_dirs

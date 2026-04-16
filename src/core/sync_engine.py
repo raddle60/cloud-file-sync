@@ -116,7 +116,7 @@ class SyncEngine:
         返回 True 表示检测到未完成的tmp文件，应跳过下载
         """
         cloud_tmp_path = cloud_name + '.tmp'
-        cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
+        cloud_files = self.cloud_storage.list_files(self.sync_pair.remote, is_include_tmp=True)
         for f in cloud_files:
             # 获取文件名（不含路径）
             fname = f.split('/')[-1]
@@ -132,7 +132,6 @@ class SyncEngine:
 
         # 2. 获取云端文件列表（过滤掉 .tmp 文件）
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
-        cloud_files = [f for f in cloud_files if not f.endswith('.tmp')]
 
         # 3. 解析云端meta文件，保存到内存
         cloud_metas = {}

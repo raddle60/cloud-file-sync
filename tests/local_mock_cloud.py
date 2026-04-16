@@ -57,12 +57,13 @@ class LocalMockCloudStorage(CloudStorage):
         """获取bucket路径前缀"""
         return f"{self.bucket_name}/"
 
-    def list_files(self, prefix: str = "") -> List[str]:
+    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> List[str]:
         """
         列出云端所有文件
 
         Args:
             prefix: 路径前缀过滤
+            is_include_tmp: 是否包含.tmp文件
 
         Returns:
             文件路径列表
@@ -81,8 +82,8 @@ class LocalMockCloudStorage(CloudStorage):
 
         for dirpath, dirnames, filenames in os.walk(self.bucket_dir):
             for filename in filenames:
-                # 跳过临时文件
-                if filename.endswith('.tmp'):
+                # 根据 is_include_tmp 参数决定是否跳过临时文件
+                if not is_include_tmp and filename.endswith('.tmp'):
                     continue
 
                 full_path = os.path.join(dirpath, filename)

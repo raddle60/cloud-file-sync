@@ -16,10 +16,13 @@ class BaiduBOS(CloudStorage):
         self.bos_client = BosClient(credentials, endpoint)
         self.bucket_name = bucket_name
 
-    def list_files(self, prefix: str = "") -> List[str]:
+    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> List[str]:
         response = self.bos_client.list_objects(self.bucket_name, prefix=prefix)
         contents = response.get('contents', [])
-        return [item['key'] for item in contents]
+        files = [item['key'] for item in contents]
+        if not is_include_tmp:
+            files = [f for f in files if not f.endswith('.tmp')]
+        return files
 
     def download_file(self, remote_path: str, local_path: str) -> None:
         os.makedirs(os.path.dirname(local_path) or '.', exist_ok=True)
