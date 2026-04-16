@@ -5,7 +5,7 @@ import pytest
 import tempfile
 import os
 import time
-from tests.local_mock_cloud import LocalMockCloudStorage
+from cloud.local_mock_cloud import LocalMockCloudStorage
 
 
 @pytest.fixture

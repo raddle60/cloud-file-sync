@@ -20,7 +20,7 @@ from core.file_watcher import FileWatcher, PeriodicChecker
 from models.sync_pair import SyncPair
 from storage.sync_state import SyncState
 from core.crypto import CryptoManager, derive_key
-from tests.local_mock_cloud import LocalMockCloudStorage
+from cloud.local_mock_cloud import LocalMockCloudStorage
 
 
 class SyncEngineTestHelper:

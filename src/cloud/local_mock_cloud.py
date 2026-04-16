@@ -27,10 +27,15 @@ class LocalMockCloudStorage(CloudStorage):
         初始化LocalMockCloudStorage
 
         Args:
-            base_dir: 模拟云端的根目录
+            base_dir: 模拟云端的根目录（必须存在）
             bucket_name: 模拟的bucket名称，用于隔离不同用户的存储
+
+        Raises:
+            FileNotFoundError: 当 base_dir 不存在时抛出
         """
         self.base_dir = os.path.abspath(base_dir)
+        if not os.path.isdir(self.base_dir):
+            raise FileNotFoundError(f"LocalMockCloudStorage base_dir does not exist: {base_dir}")
         self.bucket_name = bucket_name
         self.bucket_dir = os.path.join(self.base_dir, bucket_name)
         os.makedirs(self.bucket_dir, exist_ok=True)

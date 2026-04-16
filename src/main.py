@@ -39,6 +39,13 @@ def create_cloud_storage(config):
             endpoint=os.environ.get('BOS_ENDPOINT', ''),
             bucket_name=config.sync_pairs[0].remote.split('/')[0]
         )
+    elif config.cloud_type == CloudType.LOCAL_MOCK:
+        from cloud.local_mock_cloud import LocalMockCloudStorage
+        base_dir = os.environ.get('LOCAL_MOCK_BASE_DIR', './mock_cloud_data')
+        return LocalMockCloudStorage(
+            base_dir=base_dir,
+            bucket_name=config.sync_pairs[0].remote.split('/')[0]
+        )
     else:
         raise ValueError(f"Unsupported cloud_type: {config.cloud_type}")
 
