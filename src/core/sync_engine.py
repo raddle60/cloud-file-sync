@@ -181,7 +181,9 @@ class SyncEngine:
                     if meta.last_modified > local_mtime:
                         # 云端更新，下载
                         self.download_from_cloud(cloud_name, meta)
-                    # 否则保留本地
+                    elif local_mtime > meta.last_modified:
+                        # 本地更新，上传
+                        self._upload_file_and_meta(local_path, meta.relative_path, cloud_name)
 
         # 6. 对比并上传本地有而云端没有的文件
         for (local_root, relative_path), info in self.state._local_files.items():
@@ -199,27 +201,7 @@ class SyncEngine:
             if not cloud_exists:
                 # 上传文件
                 local_path = self.get_local_path(relative_path)
-                if self.sync_pair.encryption_enabled and self.crypto:
-                    # 加密上传 - 使用cloud_name(hash)作为云端文件名
-                    encrypted_cloud_path = self.sync_pair.remote.rstrip('/') + '/' + cloud_name
-                    tmp_encrypted = local_path + ".enc"
-                    self.crypto.encrypt_file(local_path, tmp_encrypted)
-                    self.atomic_upload(tmp_encrypted, encrypted_cloud_path, cloud_name)
-                    os.unlink(tmp_encrypted)
-
-                    # 上传meta文件 - 使用cloud_name.meta.json作为云端meta文件名
-                    meta_path = local_path + ".meta.json"
-                    self.meta_manager.write_meta(meta_path, info.meta)
-                    self.atomic_upload(meta_path, encrypted_cloud_path + ".meta.json", cloud_name + ".meta.json")
-                    os.unlink(meta_path)
-                else:
-                    # 非加密模式 - 直接上传文件和meta
-                    self.atomic_upload(local_path, cloud_path, cloud_name)
-                    # 上传meta文件
-                    meta_path = local_path + ".meta.json"
-                    self.meta_manager.write_meta(meta_path, info.meta)
-                    self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")
-                    os.unlink(meta_path)
+                self._upload_file_and_meta(local_path, relative_path, cloud_name)
 
     def download_from_cloud(self, cloud_name: str, meta: FileMeta) -> None:
         """
@@ -438,12 +420,12 @@ class SyncEngine:
 
                 if cloud_meta is None:
                     # 云端没有该文件，直接上传
-                    self._upload_file(file_path, relative_path, cloud_name, local_sha256, local_mtime)
+                    self._upload_file_and_meta(file_path, relative_path, cloud_name)
                 else:
                     # 云端有该文件，比较时间戳
                     if local_mtime > cloud_meta.last_modified:
                         # 本地更新，上传覆盖
-                        self._upload_file(file_path, relative_path, cloud_name, local_sha256, local_mtime)
+                        self._upload_file_and_meta(file_path, relative_path, cloud_name)
                     elif local_mtime < cloud_meta.last_modified:
                         # 云端更新，冲突处理
                         self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256, local_mtime)
@@ -489,23 +471,23 @@ class SyncEngine:
 
         # 上传重命名后的本地文件到云端
         cloud_conflict_name = cloud_name + f".conflict-{timestamp}"
-        self._upload_file(conflict_local_path, relative_path, cloud_conflict_name,
-                         self._calc_sha256(conflict_local_path),
-                         int(os.stat(conflict_local_path).st_mtime))
+        self._upload_file_and_meta(conflict_local_path, relative_path, cloud_conflict_name)
         logger.info(f"[INFO] Uploaded conflict file to cloud: {cloud_conflict_name}")
 
-    def _upload_file(self, file_path: str, relative_path: str, cloud_name: str,
-                    sha256: str, mtime: int):
+    def _upload_file_and_meta(self, file_path: str, relative_path: str, cloud_name: str):
         """
-        上传文件到云端
+        上传文件及对应的meta到云端
 
         Args:
             file_path: 本地文件路径
             relative_path: 相对路径
             cloud_name: 云端文件名
-            sha256: 文件sha256
-            mtime: 最后修改时间
         """
+        # 检查云端是否有未完成的tmp文件
+        if self._check_cloud_unfinished_tmp(cloud_name):
+            logger.info(f"[INFO] Cloud has unfinished tmp file, skipping: {cloud_name}")
+            return
+
         cloud_path = self.get_cloud_path(relative_path)
 
         # 从文件重新生成meta
@@ -532,10 +514,6 @@ class SyncEngine:
         else:
             self.atomic_upload(file_path, cloud_path, cloud_name)
             # 上传meta
-            meta_path = file_path + ".meta.json"
-            self.meta_manager.write_meta(meta_path, meta)
-            self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")
-            os.unlink(meta_path)
             meta_path = file_path + ".meta.json"
             self.meta_manager.write_meta(meta_path, meta)
             self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")

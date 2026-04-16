@@ -16,8 +16,11 @@ class MockCloudStorage(CloudStorage):
     def __init__(self):
         self._files = {}
 
-    def list_files(self, prefix: str = "") -> list:
-        return [k for k in self._files.keys() if k.startswith(prefix)]
+    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> list:
+        results = [k for k in self._files.keys() if k.startswith(prefix)]
+        if not is_include_tmp:
+            results = [k for k in results if not k.endswith('.tmp')]
+        return results
 
     def upload_file(self, local_path: str, remote_path: str) -> None:
         with open(local_path, 'rb') as f:
