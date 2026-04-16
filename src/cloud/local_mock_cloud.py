@@ -35,7 +35,7 @@ class LocalMockCloudStorage(CloudStorage):
         """
         self.base_dir = os.path.abspath(base_dir)
         if not os.path.isdir(self.base_dir):
-            raise FileNotFoundError(f"LocalMockCloudStorage base_dir does not exist: {base_dir}")
+            raise FileNotFoundError("LocalMockCloudStorage base_dir does not exist: " + self.base_dir)
         self.bucket_name = bucket_name
         self.bucket_dir = os.path.join(self.base_dir, bucket_name)
         os.makedirs(self.bucket_dir, exist_ok=True)
@@ -87,8 +87,8 @@ class LocalMockCloudStorage(CloudStorage):
 
         for dirpath, dirnames, filenames in os.walk(self.bucket_dir):
             for filename in filenames:
-                # 根据 is_include_tmp 参数决定是否跳过临时文件
-                if not is_include_tmp and filename.endswith('.tmp'):
+                # 根据 is_include_tmp 参数决定是否跳过临时文件和meta文件
+                if not is_include_tmp and (filename.endswith('.tmp') or filename.endswith('.meta.json')):
                     continue
 
                 full_path = os.path.join(dirpath, filename)

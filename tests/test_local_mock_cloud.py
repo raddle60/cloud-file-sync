@@ -33,17 +33,40 @@ class TestLocalMockCloudStorageBasic:
             f.write("Hello, Cloud!")
             local_path = f.name
 
+        # 创建对应的meta文件
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt.meta.json') as f:
+            import json
+            meta_content = json.dumps({
+                "original_filename": "test.txt",
+                "size": 12,
+                "last_modified": 1234567890,
+                "sha256": "abc123"
+            })
+            f.write(meta_content)
+            meta_local = f.name
+
         try:
-            # 上传
+            # 上传主文件
             remote_path = "test-bucket/test.txt"
             mock_cloud.upload_file(local_path, remote_path)
 
-            # 列出文件
+            # 上传meta文件
+            meta_remote_path = "test-bucket/test.txt.meta.json"
+            mock_cloud.upload_file(meta_local, meta_remote_path)
+
+            # 列出文件（不含tmp/meta）
             files = mock_cloud.list_files()
             assert len(files) == 1
             assert "test.txt" in files[0]
+
+            # 使用is_include_tmp=True列出文件，应包含meta文件
+            all_files = mock_cloud.list_files(is_include_tmp=True)
+            assert len(all_files) == 2
+            assert any("test.txt" in f for f in all_files)
+            assert any(".meta.json" in f for f in all_files)
         finally:
             os.unlink(local_path)
+            os.unlink(meta_local)
 
     def test_download_file(self, mock_cloud):
         """测试下载文件"""
@@ -74,20 +97,41 @@ class TestLocalMockCloudStorageBasic:
             f.write("Delete test")
             local_path = f.name
 
+        # 创建对应的meta文件
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt.meta.json') as f:
+            import json
+            meta_content = json.dumps({
+                "original_filename": "delete_test.txt",
+                "size": 11,
+                "last_modified": 1234567890,
+                "sha256": "def456"
+            })
+            f.write(meta_content)
+            meta_local = f.name
+
         try:
             remote_path = "test-bucket/delete_test.txt"
+            meta_remote_path = "test-bucket/delete_test.txt.meta.json"
+
+            # 上传主文件和meta文件
             mock_cloud.upload_file(local_path, remote_path)
+            mock_cloud.upload_file(meta_local, meta_remote_path)
 
             # 验证存在
             assert mock_cloud.file_exists(remote_path)
+            assert mock_cloud.file_exists(meta_remote_path)
 
-            # 删除
+            # 删除主文件
             mock_cloud.delete_file(remote_path)
 
-            # 验证不存在
+            # 验证主文件已删除
             assert not mock_cloud.file_exists(remote_path)
+
+            # 验证meta文件仍然存在（永不删除）
+            assert mock_cloud.file_exists(meta_remote_path)
         finally:
             os.unlink(local_path)
+            os.unlink(meta_local)
 
     def test_rename_file(self, mock_cloud):
         """测试重命名文件"""
@@ -96,19 +140,41 @@ class TestLocalMockCloudStorageBasic:
             f.write("Rename test")
             local_path = f.name
 
+        # 创建对应的meta文件
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt.meta.json') as f:
+            import json
+            meta_content = json.dumps({
+                "original_filename": "old_name.txt",
+                "size": 11,
+                "last_modified": 1234567890,
+                "sha256": "ghi789"
+            })
+            f.write(meta_content)
+            meta_local = f.name
+
         try:
             old_path = "test-bucket/old_name.txt"
             new_path = "test-bucket/new_name.txt"
-            mock_cloud.upload_file(local_path, old_path)
+            old_meta_path = "test-bucket/old_name.txt.meta.json"
+            new_meta_path = "test-bucket/new_name.txt.meta.json"
 
-            # 重命名
+            # 上传主文件和meta文件
+            mock_cloud.upload_file(local_path, old_path)
+            mock_cloud.upload_file(meta_local, old_meta_path)
+
+            # 重命名主文件
             mock_cloud.rename_file(old_path, new_path)
 
             # 验证新文件存在，旧文件不存在
             assert mock_cloud.file_exists(new_path)
             assert not mock_cloud.file_exists(old_path)
+
+            # meta文件应该还在原位置（LocalMockCloudStorage不处理meta重命名）
+            # 这是因为meta重命名应该由SyncEngine处理
+            assert mock_cloud.file_exists(old_meta_path)
         finally:
             os.unlink(local_path)
+            os.unlink(meta_local)
 
     def test_get_file_hash(self, mock_cloud):
         """测试获取文件hash"""

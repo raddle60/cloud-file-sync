@@ -196,13 +196,19 @@ class SyncEngine:
                     self.atomic_upload(tmp_encrypted, encrypted_cloud_path, cloud_name)
                     os.unlink(tmp_encrypted)
 
-                    # 上传meta文件 - 使用cloud_name.hash作为云端meta文件名
-                    meta_path = local_path + ".meta"
+                    # 上传meta文件 - 使用cloud_name.meta.json作为云端meta文件名
+                    meta_path = local_path + ".meta.json"
                     self.meta_manager.write_meta(meta_path, info.meta)
-                    self.atomic_upload(meta_path, encrypted_cloud_path + ".meta", cloud_name + ".meta")
+                    self.atomic_upload(meta_path, encrypted_cloud_path + ".meta.json", cloud_name + ".meta.json")
                     os.unlink(meta_path)
                 else:
+                    # 非加密模式 - 直接上传文件和meta
                     self.atomic_upload(local_path, cloud_path, cloud_name)
+                    # 上传meta文件
+                    meta_path = local_path + ".meta.json"
+                    self.meta_manager.write_meta(meta_path, info.meta)
+                    self.atomic_upload(meta_path, cloud_path + ".meta.json", cloud_name + ".meta.json")
+                    os.unlink(meta_path)
 
     def download_from_cloud(self, cloud_name: str, meta: FileMeta) -> None:
         """
@@ -285,6 +291,17 @@ class SyncEngine:
         import tempfile
         import os
 
+        # 从meta_path推导relative_path
+        # meta_path格式: remote/relative_path.meta.json
+        remote = self.sync_pair.remote.rstrip('/')
+        if meta_path.startswith(remote):
+            relative_path = meta_path[len(remote):].lstrip('/')
+            # 去掉 .meta.json 后缀得到 relative_path
+            if relative_path.endswith('.meta.json'):
+                relative_path = relative_path[:-len('.meta.json')]
+        else:
+            relative_path = ""
+
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp_path = tmp.name
 
@@ -297,7 +314,9 @@ class SyncEngine:
                 os.unlink(tmp_path)
                 tmp_path = decrypted_tmp
 
-            return self.meta_manager.read_meta(tmp_path)
+            meta = self.meta_manager.read_meta(tmp_path)
+            meta.relative_path = relative_path
+            return meta
         finally:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)

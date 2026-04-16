@@ -2,6 +2,7 @@ import argparse
 import sys
 import signal
 import os
+import time
 from config.config_loader import ConfigLoader
 from core.crypto import derive_key, CryptoManager
 from core.sync_engine import SyncEngine
@@ -27,30 +28,29 @@ def parse_args(args=None):
 
     return parser.parse_args(args)
 
-def create_cloud_storage(config):
+def create_cloud_storage(config, sync_pair):
     """根据 cloud_type 创建云端存储实例"""
-    if not config.sync_pairs:
-        raise ValueError("No sync_pairs configured")
-
     if config.cloud_type == CloudType.BAIDU_BOS:
         return BaiduBOS(
             access_key_id=os.environ.get('BOS_ACCESS_KEY_ID', ''),
             access_key_secret=os.environ.get('BOS_ACCESS_KEY_SECRET', ''),
             endpoint=os.environ.get('BOS_ENDPOINT', ''),
-            bucket_name=config.sync_pairs[0].remote.split('/')[0]
+            bucket_name=sync_pair.remote.split('/')[0]
         )
     elif config.cloud_type == CloudType.LOCAL_MOCK:
         from cloud.local_mock_cloud import LocalMockCloudStorage
-        base_dir = os.environ.get('LOCAL_MOCK_BASE_DIR', './mock_cloud_data')
         return LocalMockCloudStorage(
-            base_dir=base_dir,
-            bucket_name=config.sync_pairs[0].remote.split('/')[0]
+            base_dir=sync_pair.remote,
+            bucket_name=""
         )
     else:
         raise ValueError(f"Unsupported cloud_type: {config.cloud_type}")
 
+_sync_stopping = False
+
 def start_sync(config_path: str, daemon: bool = False):
-    global _global_watcher
+    global _global_watcher, _sync_stopping
+    _sync_stopping = False
 
     # 加载配置
     loader = ConfigLoader(config_path)
@@ -77,7 +77,7 @@ def start_sync(config_path: str, daemon: bool = False):
             encryption_enabled=config.encryption_enabled
         )
 
-        cloud = create_cloud_storage(config)
+        cloud = create_cloud_storage(config, sync_pair)
 
         engine = SyncEngine(
             sync_pair=sync_pair,
@@ -118,12 +118,20 @@ def start_sync(config_path: str, daemon: bool = False):
     for engine in engines:
         engine.full_sync()
 
+    def signal_handler(signum, frame):
+        global _sync_stopping
+        _sync_stopping = True
+        stop_sync()
+
     if not daemon:
         # 前台模式，阻塞监听
         print(f"Syncing started. Watching {config.sync_pairs[0].local}")
-        signal.signal(signal.SIGINT, lambda s, f: stop_sync())
-        signal.signal(signal.SIGTERM, lambda s, f: stop_sync())
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
         _global_watcher.start()
+        # 阻塞等待信号
+        while not _sync_stopping:
+            time.sleep(0.5)
     else:
         # Daemon模式
         _global_watcher.start()
@@ -155,7 +163,7 @@ def run_sync_once(config_path: str):
             encryption_enabled=config.encryption_enabled
         )
 
-        cloud = create_cloud_storage(config)
+        cloud = create_cloud_storage(config, sync_pair)
 
         engine = SyncEngine(
             sync_pair=sync_pair,

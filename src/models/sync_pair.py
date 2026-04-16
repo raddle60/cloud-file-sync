@@ -26,8 +26,7 @@ class FileMeta:
             "original_filename": self.original_filename,
             "size": self.size,
             "last_modified": self.last_modified,
-            "sha256": self.sha256,
-            "relative_path": self.relative_path
+            "sha256": self.sha256
         }
 
     @classmethod

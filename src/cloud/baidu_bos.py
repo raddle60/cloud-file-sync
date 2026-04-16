@@ -1,7 +1,7 @@
 import os
 from typing import List
-from baidu.bce.bos import BosClient
-from baidu.bce.auth import Credentials, BceCredentials
+from baidubce.services.bos.bos_client import BosClient, bce_client_configuration
+from baidubce.auth.bce_credentials import BceCredentials
 from cloud.base import CloudStorage
 
 class BaiduBOS(CloudStorage):
@@ -13,7 +13,8 @@ class BaiduBOS(CloudStorage):
         bucket_name: str
     ):
         credentials = BceCredentials(access_key_id, access_key_secret)
-        self.bos_client = BosClient(credentials, endpoint)
+        config = bce_client_configuration.BceClientConfiguration(credentials, endpoint)
+        self.bos_client = BosClient(config)
         self.bucket_name = bucket_name
 
     def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> List[str]:

@@ -6,11 +6,12 @@ from config.config_loader import ConfigLoader, Config
 from models.sync_pair import SyncPair, CloudType
 
 def test_load_config_success():
+    temp_dir = tempfile.gettempdir()
     config_data = {
         "encryption_enabled": True,
         "encryption_key": "dGVzdC1rZXktMzItYnl0ZXMtYmFzZTY0",
         "sync_pairs": [
-            {"local": "/tmp/test", "remote": "bucket/prefix/"}
+            {"local": temp_dir, "remote": "bucket/prefix/"}
         ]
     }
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -21,7 +22,7 @@ def test_load_config_success():
         config = loader.load()
         assert config.encryption_enabled == True
         assert len(config.sync_pairs) == 1
-        assert config.sync_pairs[0].local == "/tmp/test"
+        assert config.sync_pairs[0].local == temp_dir
     finally:
         os.unlink(temp_path)
 
