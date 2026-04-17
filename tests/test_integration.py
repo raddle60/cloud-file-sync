@@ -3,48 +3,95 @@ import pytest
 import tempfile
 import os
 import time
+import hashlib
+from typing import List, Optional
 from unittest.mock import Mock, patch, MagicMock
 from config.config_loader import ConfigLoader
 from core.crypto import CryptoManager, derive_key
 from core.sync_engine import SyncEngine
 from models.sync_pair import SyncPair
 from storage.sync_state import SyncState
-from cloud.base import CloudStorage
+from cloud.base import CloudStorage, FileInfo
 
 class MockCloudStorage(CloudStorage):
     """Mock云端存储用于测试"""
     def __init__(self):
         self._files = {}
 
-    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> list:
-        results = [k for k in self._files.keys() if k.startswith(prefix)]
-        if not is_include_tmp:
-            results = [k for k in results if not k.endswith('.tmp')]
+    def list_files(
+        self,
+        prefix: str = "",
+        is_include_tmp: bool = False,
+        recursive: bool = True,
+        include_dirs: bool = False
+    ) -> List[FileInfo]:
+        results = []
+        for k in self._files.keys():
+            if not k.startswith(prefix):
+                continue
+            if not is_include_tmp and k.endswith('.tmp'):
+                continue
+            data = self._files[k]
+            sha256 = hashlib.sha256(data).hexdigest()
+            results.append(FileInfo(
+                file_id=k,
+                file_path=k,
+                size=len(data),
+                file_hash=sha256,
+                hash_algo='sha256',
+                local_mtime=None,
+                isdir=False
+            ))
         return results
 
-    def upload_file(self, local_path: str, remote_path: str) -> None:
+    def upload_file(self, local_path: str, remote_path: str) -> FileInfo:
         with open(local_path, 'rb') as f:
-            self._files[remote_path] = f.read()
+            data = f.read()
+            self._files[remote_path] = data
+        sha256 = hashlib.sha256(data).hexdigest()
+        return FileInfo(
+            file_id=remote_path,
+            file_path=remote_path,
+            size=len(data),
+            file_hash=sha256,
+            hash_algo='sha256',
+            local_mtime=None,
+            isdir=False
+        )
 
-    def download_file(self, remote_path: str, local_path: str) -> None:
+    def download_file(
+        self,
+        file_id: Optional[str],
+        remote_path: str,
+        local_path: str
+    ) -> None:
         os.makedirs(os.path.dirname(local_path) or '.', exist_ok=True)
         with open(local_path, 'wb') as f:
             f.write(self._files.get(remote_path, b''))
 
-    def delete_file(self, remote_path: str) -> None:
+    def delete_file(self, file_id: Optional[str], remote_path: str) -> None:
         self._files.pop(remote_path, None)
 
-    def rename_file(self, old_path: str, new_path: str) -> None:
+    def rename_file(
+        self,
+        file_id: Optional[str],
+        old_path: str,
+        new_path: str
+    ) -> FileInfo:
         if old_path in self._files:
-            self._files[new_path] = self._files.pop(old_path)
-
-    def get_file_hash(self, remote_path: str) -> str:
-        import hashlib
-        data = self._files.get(remote_path, b'')
-        return hashlib.sha256(data).hexdigest()
-
-    def get_file_size(self, remote_path: str) -> int:
-        return len(self._files.get(remote_path, b''))
+            data = self._files.pop(old_path)
+            self._files[new_path] = data
+            sha256 = hashlib.sha256(data).hexdigest()
+            return FileInfo(
+                file_id=new_path,
+                file_path=new_path,
+                size=len(data),
+                file_hash=sha256,
+                hash_algo='sha256',
+                local_mtime=None,
+                isdir=False
+            )
+        raise FileNotFoundError(f"Cloud file not found: {old_path}")
 
 def test_end_to_end_sync_without_encryption():
     """端到端测试：无加密模式"""
@@ -119,4 +166,4 @@ def test_end_to_end_sync_with_encryption():
         assert len(cloud_files) >= 2  # 文件 + meta
 
         # 验证文件名是hash
-        assert any("sha256" not in f for f in cloud_files)
+        assert any("sha256" not in f.file_path for f in cloud_files)
