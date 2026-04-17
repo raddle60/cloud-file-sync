@@ -59,6 +59,7 @@ class SyncEngine:
     def scan_local_files(self):
         """扫描本地文件"""
         if not os.path.exists(self.sync_pair.local):
+            logger.warning(f"[WARN] Local directory does not exist: {self.sync_pair.local}")
             return
 
         for dirpath, dirnames, filenames in os.walk(self.sync_pair.local):
@@ -171,6 +172,7 @@ class SyncEngine:
             # 检查本地是否存在
             if not os.path.exists(local_path):
                 # 本地不存在，下载
+                logger.info(f"[INFO] Local file not found, downloading from cloud: {local_path}")
                 self.download_from_cloud(cloud_name, meta)
             else:
                 # 本地存在，比较sha256
@@ -180,9 +182,11 @@ class SyncEngine:
                     local_mtime = int(os.stat(local_path).st_mtime)
                     if meta.last_modified > local_mtime:
                         # 云端更新，下载
+                        logger.info(f"[INFO] Cloud file newer, downloading: {local_path}")
                         self.download_from_cloud(cloud_name, meta)
                     elif local_mtime > meta.last_modified:
                         # 本地更新，上传
+                        logger.info(f"[INFO] Local file newer, uploading: {local_path}")
                         self._upload_file_and_meta(local_path, meta.relative_path, cloud_name)
 
         # 6. 对比并上传本地有而云端没有的文件
@@ -200,6 +204,7 @@ class SyncEngine:
             cloud_exists = any(f.file_path.lstrip(r"\/") == relative_path.lstrip(r"\/") for f in cloud_files)
             if not cloud_exists:
                 # 上传文件
+                logger.info(f"[INFO] Local file exists, uploading to cloud: {relative_path}")
                 local_path = self.get_local_path(relative_path)
                 self._upload_file_and_meta(local_path, relative_path, cloud_name)
 
@@ -254,6 +259,7 @@ class SyncEngine:
         # 3. 原子替换
         if verified:
             self.cloud_storage.delete_file(None, cloud_path)
+            logger.info(f"[INFO] Atomic upload: deleted old cloud file: {cloud_path}")
             self.cloud_storage.rename_file(None, tmp_path, cloud_path)
         else:
             self.cloud_storage.delete_file(None, tmp_path)
@@ -361,10 +367,12 @@ class SyncEngine:
             local_meta = self._local_metas.get(meta.relative_path)
             if local_meta is None:
                 # 本地没有，视为新增
+                logger.info(f"[INFO] Cloud file new (local missing): {meta.relative_path}")
                 changes.append({"type": "new", "cloud_name": cloud_name, "meta": meta})
             elif local_meta.sha256 != meta.sha256:
                 # 内容不同
                 if meta.last_modified > local_meta.last_modified:
+                    logger.info(f"[INFO] Cloud file modified (newer): {meta.relative_path}")
                     changes.append({"type": "modified", "cloud_name": cloud_name, "meta": meta})
 
         # 注：删除检测需要缓存云端状态，暂不支持
@@ -391,6 +399,7 @@ class SyncEngine:
             relative_path = PathUtil.normalize_path(relative_path)
             if not os.path.exists(file_path):
                 # 文件已删除，标记删除状态
+                logger.info(f"[INFO] Local file deleted, marking sync state: {relative_path}")
                 self.state.mark_local_deleted(
                     self.sync_pair.local,
                     relative_path,
@@ -425,11 +434,13 @@ class SyncEngine:
 
                 if cloud_meta is None:
                     # 云端没有该文件，直接上传
+                    logger.info(f"[INFO] Cloud file not found, uploading new: {relative_path}")
                     self._upload_file_and_meta(file_path, relative_path, cloud_name)
                 else:
                     # 云端有该文件，比较时间戳
                     if local_mtime > cloud_meta.last_modified:
                         # 本地更新，上传覆盖
+                        logger.info(f"[INFO] Local file modified, uploading update: {relative_path}")
                         self._upload_file_and_meta(file_path, relative_path, cloud_name)
                     elif local_mtime < cloud_meta.last_modified:
                         # 云端更新，冲突处理

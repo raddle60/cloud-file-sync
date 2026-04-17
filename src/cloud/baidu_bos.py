@@ -1,8 +1,11 @@
 import os
+import logging
 from typing import List, Optional
 from baidubce.services.bos.bos_client import BosClient, bce_client_configuration
 from baidubce.auth.bce_credentials import BceCredentials
 from cloud.base import CloudStorage, FileInfo
+
+logger = logging.getLogger(__name__)
 
 class BaiduBOS(CloudStorage):
     def __init__(
@@ -58,7 +61,8 @@ class BaiduBOS(CloudStorage):
             # BOS 时间格式: 2024-01-01T00:00:00Z
             dt = datetime.strptime(timestr, "%Y-%m-%dT%H:%M:%SZ")
             return int(dt.timestamp())
-        except:
+        except Exception as e:
+            logger.error(f"Failed to parse BOS time '{timestr}': {e}")
             return None
 
     def upload_file(self, local_path: str, remote_path: str) -> FileInfo:
