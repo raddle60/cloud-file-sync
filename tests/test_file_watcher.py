@@ -10,6 +10,7 @@ def test_file_watcher_init():
     assert watcher.watch_path == "/tmp"
     assert watcher.debounce_seconds == 10
 
+@pytest.mark.slow
 def test_file_watcher_debounce_timer():
     """测试防抖计时器"""
     with patch('core.file_watcher.Observer') as mock_observer:

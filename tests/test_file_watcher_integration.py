@@ -171,6 +171,7 @@ def sync_helper_encrypted():
 class TestSyncEngineLocalToCloud:
     """本地到云端同步测试"""
 
+    @pytest.mark.slow
     def test_local_file_created_syncs_to_cloud(self, sync_helper):
         """场景1：本地新增文件 → 同步到云端"""
         # 创建本地文件
@@ -184,6 +185,7 @@ class TestSyncEngineLocalToCloud:
         assert len(cloud_files) >= 1
         assert any("new_file.txt" in f.file_path for f in cloud_files)
 
+    @pytest.mark.slow
     def test_local_file_modified_via_callback(self, sync_helper):
         """场景2：本地修改文件通过文件变化回调同步
 
@@ -213,6 +215,7 @@ class TestSyncEngineLocalToCloud:
         content = sync_helper.get_cloud_file_content("modified.txt")
         assert content == "Original content"
 
+    @pytest.mark.slow
     def test_local_file_deleted_syncs_to_cloud(self, sync_helper):
         """场景3：本地删除文件 → 同步删除到云端"""
         # 创建并同步文件
@@ -234,6 +237,7 @@ class TestSyncEngineLocalToCloud:
         # 同步
         sync_helper.sync_and_wait()
 
+    @pytest.mark.slow
     def test_local_subdirectory_sync(self, sync_helper):
         """场景4：子目录文件同步"""
         # 创建子目录和文件
@@ -255,6 +259,7 @@ class TestSyncEngineLocalToCloud:
 class TestSyncEngineCloudToLocal:
     """云端到本地同步测试"""
 
+    @pytest.mark.slow
     def test_cloud_file_detected_after_meta_sync(self, sync_helper):
         """场景5：云端新增文件通过meta检测
 
@@ -280,6 +285,7 @@ class TestSyncEngineCloudToLocal:
 class TestSyncEngineEncrypted:
     """加密模式同步测试"""
 
+    @pytest.mark.slow
     def test_encrypted_upload(self, sync_helper_encrypted):
         """场景6：加密模式上传文件"""
         # 创建本地文件
@@ -292,6 +298,7 @@ class TestSyncEngineEncrypted:
         cloud_files = sync_helper_encrypted.cloud.list_files()
         assert len(cloud_files) >= 1
 
+    @pytest.mark.slow
     def test_encrypted_full_cycle(self, sync_helper_encrypted):
         """场景7：加密模式完整同步周期"""
         # 创建本地文件
@@ -312,6 +319,7 @@ class TestSyncEngineEncrypted:
 class TestSyncEngineConflict:
     """冲突测试"""
 
+    @pytest.mark.slow
     def test_conflict_detection_scenario(self, sync_helper):
         """场景8：冲突检测框架
 
@@ -337,6 +345,7 @@ class TestSyncEngineConflict:
 class TestSyncEngineAtomic:
     """原子操作测试"""
 
+    @pytest.mark.slow
     def test_atomic_upload_with_verification(self, sync_helper):
         """场景9：原子上传（带验证）"""
         # 创建文件
@@ -389,6 +398,7 @@ class TestSyncEngineAtomic:
 class TestFileWatcherIntegration:
     """FileWatcher集成测试"""
 
+    @pytest.mark.slow
     def test_file_watcher_detects_local_changes(self, sync_helper):
         """场景11：FileWatcher检测本地文件变化"""
         changes_detected = []
@@ -417,6 +427,7 @@ class TestFileWatcherIntegration:
         finally:
             watcher.stop()
 
+    @pytest.mark.slow
     def test_periodic_cloud_checker(self, sync_helper):
         """场景12：PeriodicChecker周期性检查云端"""
         cloud_checks = []
@@ -435,6 +446,7 @@ class TestFileWatcherIntegration:
         # 验证检查次数
         assert len(cloud_checks) >= 3
 
+    @pytest.mark.slow
     def test_full_monitoring_cycle(self, sync_helper):
         """场景13：完整监控周期测试"""
         cloud_check_count = 0
@@ -484,6 +496,7 @@ class TestFileWatcherIntegration:
 class TestEdgeCases:
     """边界情况测试"""
 
+    @pytest.mark.slow
     def test_empty_directory_sync(self, sync_helper):
         """场景14：空目录同步"""
         # 本地目录为空
@@ -492,6 +505,7 @@ class TestEdgeCases:
         # 云端为空（初始状态）
         # 可能因为之前测试有残留，但同步后状态一致
 
+    @pytest.mark.slow
     def test_reasonable_long_filename(self, sync_helper):
         """场景15：较长文件名处理（Windows兼容）"""
         # Windows路径限制约260字符，我们使用较短的名字
@@ -505,6 +519,7 @@ class TestEdgeCases:
         cloud_files = sync_helper.cloud.list_files()
         assert len(cloud_files) >= 1
 
+    @pytest.mark.slow
     def test_special_characters_in_filename(self, sync_helper):
         """场景16：特殊字符文件名"""
         special_names = [
@@ -521,6 +536,7 @@ class TestEdgeCases:
         cloud_files = sync_helper.cloud.list_files()
         assert len(cloud_files) >= len(special_names)
 
+    @pytest.mark.slow
     def test_sync_state_tracking(self, sync_helper):
         """场景17：SyncState状态跟踪"""
         # 创建文件
