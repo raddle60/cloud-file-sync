@@ -14,14 +14,15 @@ from utils.path_util import PathUtil
 
 logger = logging.getLogger(__name__)
 
+
 class SyncEngine:
     def __init__(
-        self,
-        sync_pair: SyncPair,
-        state: SyncState,
-        cloud_storage: CloudStorage,
-        crypto: Optional[CryptoManager],
-        config_key: str
+            self,
+            sync_pair: SyncPair,
+            state: SyncState,
+            cloud_storage: CloudStorage,
+            crypto: Optional[CryptoManager],
+            config_key: str
     ):
         self.sync_pair = sync_pair
         self.state = state
@@ -43,19 +44,17 @@ class SyncEngine:
 
     def get_cloud_path(self, relative_path: str) -> str:
         """获取云端完整路径"""
-        remote = self.sync_pair.remote.rstrip('/')
-        rel = relative_path.lstrip('/')
-        if rel:
-            return f"{remote}/{rel}"
-        return remote
+        remote = PathUtil.normalize_path(self.sync_pair.remote)
+        rel = PathUtil.normalize_path(relative_path).lstrip('/')
+        return PathUtil.normalize_path(f"{remote}/{rel}")
 
     def get_local_path(self, relative_path: str) -> str:
         """获取本地完整路径"""
-        local = self.sync_pair.local.rstrip(os.sep)
-        rel = relative_path.lstrip(os.sep)
+        local = PathUtil.normalize_path(self.sync_pair.local)
+        rel = PathUtil.normalize_path(relative_path).lstrip('/')
         if rel:
             return PathUtil.join(local, rel)
-        return local
+        return PathUtil.normalize_path(local)
 
     def scan_local_files(self):
         """扫描本地文件"""
@@ -69,7 +68,7 @@ class SyncEngine:
                     continue
 
                 full_path = PathUtil.join(dirpath, filename)
-                relative_path = os.path.relpath(full_path, self.sync_pair.local)
+                relative_path = PathUtil.normalize_path(os.path.relpath(full_path, self.sync_pair.local)).lstrip(r"\/")
 
                 stat = os.stat(full_path)
                 sha256 = self._calc_sha256(full_path)
@@ -151,13 +150,13 @@ class SyncEngine:
         # 3. 解析云端meta文件，保存到内存
         cloud_metas = {}
         for f in cloud_files:
-            if f.endswith('.meta.json'):
+            if not f.endswith('.meta.json'):
                 try:
-                    meta = self._download_and_read_meta(f)
-                    # 从meta获取cloud_name
-                    cloud_name = f[:-len('.meta.json')]
-                    cloud_metas[cloud_name] = meta
-                except Exception:
+                    cloud_path = PathUtil.normalize_path(f)
+                    meta = self._download_and_read_meta(cloud_path + ".meta.json")
+                    cloud_metas[cloud_path] = meta
+                except Exception as e:
+                    logger.error(f"[ERROR] Failed to parse cloud meta: {f} , exception: {e}")
                     continue
 
         # 4. 全量对比和同步
@@ -280,13 +279,13 @@ class SyncEngine:
             os.unlink(tmp_path)
             raise ValueError(f"Download verification failed for {local_path}")
 
-    def _get_cloud_meta(self, cloud_name: str) -> Optional[FileMeta]:
+    def _get_cloud_meta(self, relative_path: str) -> Optional[FileMeta]:
         """从云端获取指定文件的meta信息"""
-        cloud_path = self.get_cloud_path(cloud_name)
-        meta_path = cloud_path + ".meta.json"
+        meta_path = relative_path + ".meta.json"
         try:
             return self._download_and_read_meta(meta_path)
-        except Exception:
+        except Exception as e:
+            logger.error(f"Failed to get meta for {relative_path}: {e}")
             return None
 
     def _download_and_read_meta(self, meta_path: str) -> FileMeta:
@@ -296,6 +295,10 @@ class SyncEngine:
 
         # 从meta_path推导relative_path
         relative_path = meta_path
+        if meta_path.startswith(self.sync_pair.remote):
+            relative_path = meta_path[len(self.sync_pair.remote):]
+        relative_path = relative_path.lstrip(r"\/")
+
         # 去掉 .meta.json 后缀得到 relative_path
         if relative_path.endswith('.meta.json'):
             relative_path = relative_path[:-len('.meta.json')]
@@ -332,13 +335,13 @@ class SyncEngine:
         # 2. 解析meta文件
         current_metas: Dict[str, FileMeta] = {}
         for f in cloud_files:
-            if f.endswith('.meta.json'):
+            if not f.endswith('.meta.json'):
                 try:
-                    meta = self._download_and_read_meta(f)
-                    # 从meta中获取原始cloud_name（去掉.meta.json后缀）
-                    cloud_name = f[:-len('.meta.json')]
-                    current_metas[cloud_name] = meta
-                except Exception:
+                    cloud_path = PathUtil.normalize_path(f)
+                    meta = self._download_and_read_meta(cloud_path + ".meta.json")
+                    current_metas[cloud_path] = meta
+                except Exception as e:
+                    logger.error(f"check_cloud_changes Failed to parse meta for {f}: {e}")
                     continue
 
         changes: List[Dict] = []
@@ -379,7 +382,7 @@ class SyncEngine:
 
             # 计算 relative_path
             relative_path = os.path.relpath(file_path, self.sync_pair.local)
-
+            relative_path = PathUtil.normalize_path(relative_path)
             if not os.path.exists(file_path):
                 # 文件已删除，标记删除状态
                 self.state.mark_local_deleted(
@@ -392,8 +395,7 @@ class SyncEngine:
                 # 从本地meta中移除
                 self._local_metas.pop(relative_path, None)
                 # 检查云端是否有该文件（通过meta文件），满足条件则删除云端文件（保留meta）
-                cloud_name = self.get_cloud_name(os.path.basename(relative_path))
-                cloud_meta = self._get_cloud_meta(cloud_name)
+                cloud_meta = self._get_cloud_meta(relative_path)
                 if cloud_meta is not None and local_meta is not None:
                     # 只有sha256相同且本地时间>=云端时间才删除
                     if local_meta.sha256 == cloud_meta.sha256 and local_meta.last_modified >= cloud_meta.last_modified:
@@ -413,7 +415,7 @@ class SyncEngine:
                     continue
 
                 # 检查云端是否有对应的 meta 文件
-                cloud_meta = self._get_cloud_meta(cloud_name)
+                cloud_meta = self._get_cloud_meta(relative_path)
 
                 if cloud_meta is None:
                     # 云端没有该文件，直接上传
@@ -425,11 +427,13 @@ class SyncEngine:
                         self._upload_file_and_meta(file_path, relative_path, cloud_name)
                     elif local_mtime < cloud_meta.last_modified:
                         # 云端更新，冲突处理
-                        self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256, local_mtime)
+                        self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256,
+                                              local_mtime)
                     else:
                         # 时间戳相同但仍触发变更，说明内容不同，也是冲突
                         if local_sha256 != cloud_meta.sha256:
-                            self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256, local_mtime)
+                            self._handle_conflict(file_path, relative_path, cloud_name, cloud_meta, local_sha256,
+                                                  local_mtime)
 
     def _handle_conflict(self, local_path: str, relative_path: str, cloud_name: str,
                          cloud_meta: 'FileMeta', local_sha256: str, local_mtime: int):

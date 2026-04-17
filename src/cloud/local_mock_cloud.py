@@ -51,9 +51,9 @@ class LocalMockCloudStorage(CloudStorage):
         Returns:
             本地文件系统路径
         """
-        # 移除bucket名前缀（如果存在）
-        if remote_path.startswith(self.bucket_name):
-            remote_path = remote_path[len(self.bucket_name):].lstrip('/')
+        # 如果本地路径已经包含bucket前缀，说明是完整路径
+        if remote_path.startswith(self.bucket_dir):
+            return remote_path
 
         # 转换为本地路径
         local_path = PathUtil.join(self.bucket_dir, remote_path)

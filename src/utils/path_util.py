@@ -25,4 +25,11 @@ class PathUtil:
         """
         # Strip leading / or \ from path to avoid absolute path issues
         clean_path = path.lstrip(r'\/')
-        return os.path.join(dir, clean_path)
+        return PathUtil.normalize_path(os.path.join(dir, clean_path))
+
+    @staticmethod
+    def normalize_path(relative_path: str):
+        if relative_path:
+            relative_path = os.path.normpath(relative_path)
+            return relative_path.replace('\\', '/')
+        return relative_path
