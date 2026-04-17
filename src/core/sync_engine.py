@@ -131,10 +131,10 @@ class SyncEngine:
         """
         cloud_tmp_path = cloud_name + '.tmp'
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote, is_include_tmp=True)
-        for f in cloud_files:
+        for file_info in cloud_files:
             # 获取文件名（不含路径）
-            fname = f.split('/')[-1]
-            if fname == cloud_tmp_path or f == cloud_tmp_path:
+            fname = file_info.file_path.split('/')[-1]
+            if fname == cloud_tmp_path or file_info.file_path == cloud_tmp_path:
                 logger.error(f"[ERROR] Sync interrupted: cloud file has unfinished tmp: {cloud_name}.tmp")
                 return True
         return False
@@ -149,14 +149,14 @@ class SyncEngine:
 
         # 3. 解析云端meta文件，保存到内存
         cloud_metas = {}
-        for f in cloud_files:
-            if not f.endswith('.meta.json'):
+        for file_info in cloud_files:
+            if not file_info.file_path.endswith('.meta.json'):
                 try:
-                    cloud_path = PathUtil.normalize_path(f)
+                    cloud_path = PathUtil.normalize_path(file_info.file_path)
                     meta = self._download_and_read_meta(cloud_path + ".meta.json")
                     cloud_metas[cloud_path] = meta
                 except Exception as e:
-                    logger.error(f"[ERROR] Failed to parse cloud meta: {f} , exception: {e}")
+                    logger.error(f"[ERROR] Failed to parse cloud meta: {file_info.file_path} , exception: {e}")
                     continue
 
         # 4. 全量对比和同步
@@ -197,7 +197,7 @@ class SyncEngine:
                 continue
 
             # 检查云端是否已有该文件（通过实际云端列表）
-            cloud_exists = any(f == cloud_path or f.endswith('/' + cloud_name) for f in cloud_files)
+            cloud_exists = any(f.file_path == cloud_path or f.file_path.endswith('/' + cloud_name) for f in cloud_files)
             if not cloud_exists:
                 # 上传文件
                 local_path = self.get_local_path(relative_path)
@@ -236,21 +236,27 @@ class SyncEngine:
         self.cloud_storage.upload_file(local_path, tmp_path)
 
         # 2. 验证（优先hash，其次大小）
-        try:
-            cloud_hash = self.cloud_storage.get_file_hash(tmp_path)
+        # 获取云端文件信息进行验证
+        cloud_files = self.cloud_storage.list_files(prefix=self.sync_pair.remote, is_include_tmp=True)
+        cloud_info = None
+        for f in cloud_files:
+            if f.file_path == tmp_path:
+                cloud_info = f
+                break
+
+        if cloud_info and cloud_info.file_hash:
             local_hash = self._calc_sha256(local_path)
-            verified = (cloud_hash == local_hash)
-        except NotImplementedError:
-            cloud_size = self.cloud_storage.get_file_size(tmp_path)
+            verified = (cloud_info.file_hash == local_hash)
+        else:
             local_size = os.path.getsize(local_path)
-            verified = (cloud_size == local_size)
+            verified = (cloud_info.size == local_size if cloud_info and cloud_info.size else False)
 
         # 3. 原子替换
         if verified:
-            self.cloud_storage.delete_file(cloud_path)
-            self.cloud_storage.rename_file(tmp_path, cloud_path)
+            self.cloud_storage.delete_file(None, cloud_path)
+            self.cloud_storage.rename_file(None, tmp_path, cloud_path)
         else:
-            self.cloud_storage.delete_file(tmp_path)
+            self.cloud_storage.delete_file(None, tmp_path)
             raise ValueError(f"Upload verification failed for {cloud_path}")
 
     def atomic_download(self, cloud_path: str, local_path: str, expected_sha256: str):
@@ -258,7 +264,7 @@ class SyncEngine:
         tmp_path = local_path + ".tmp"
 
         # 1. 下载到tmp
-        self.cloud_storage.download_file(cloud_path, tmp_path)
+        self.cloud_storage.download_file(None, cloud_path, tmp_path)
 
         # 2. 验证hash
         if self.sync_pair.encryption_enabled and self.crypto:
@@ -308,7 +314,7 @@ class SyncEngine:
 
         try:
             full_meta_path = PathUtil.join(self.sync_pair.remote, meta_path)
-            self.cloud_storage.download_file(full_meta_path, tmp_path)
+            self.cloud_storage.download_file(None, full_meta_path, tmp_path)
 
             if self.sync_pair.encryption_enabled and self.crypto:
                 decrypted_tmp = tmp_path + ".dec"
@@ -330,18 +336,18 @@ class SyncEngine:
         """
         # 1. 获取当前云端所有文件（过滤掉 .tmp 文件）
         cloud_files = self.cloud_storage.list_files(self.sync_pair.remote)
-        cloud_files = [f for f in cloud_files if not f.endswith('.tmp')]
+        cloud_file_paths = [f.file_path for f in cloud_files if not f.file_path.endswith('.tmp')]
 
         # 2. 解析meta文件
         current_metas: Dict[str, FileMeta] = {}
-        for f in cloud_files:
-            if not f.endswith('.meta.json'):
+        for file_path in cloud_file_paths:
+            if not file_path.endswith('.meta.json'):
                 try:
-                    cloud_path = PathUtil.normalize_path(f)
+                    cloud_path = PathUtil.normalize_path(file_path)
                     meta = self._download_and_read_meta(cloud_path + ".meta.json")
                     current_metas[cloud_path] = meta
                 except Exception as e:
-                    logger.error(f"check_cloud_changes Failed to parse meta for {f}: {e}")
+                    logger.error(f"check_cloud_changes Failed to parse meta for {file_path}: {e}")
                     continue
 
         changes: List[Dict] = []
@@ -401,7 +407,7 @@ class SyncEngine:
                     if local_meta.sha256 == cloud_meta.sha256 and local_meta.last_modified >= cloud_meta.last_modified:
                         cloud_path = self.get_cloud_path(relative_path)
                         # 删除云端文件（meta文件永不删除）
-                        self.cloud_storage.delete_file(cloud_path)
+                        self.cloud_storage.delete_file(None, cloud_path)
                         logger.info(f"[INFO] Deleted cloud file: {cloud_path}")
             else:
                 # 文件新增或修改

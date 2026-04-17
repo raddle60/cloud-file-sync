@@ -38,7 +38,15 @@ class LocalMockCloudStorage(CloudStorage):
         if not os.path.isdir(self.base_dir):
             raise FileNotFoundError("LocalMockCloudStorage base_dir does not exist: " + self.base_dir)
         self.bucket_name = bucket_name
-        self.bucket_dir = PathUtil.join(self.base_dir, bucket_name)
+
+        # Compute bucket_dir: the actual directory where bucket files are stored
+        # bucket_dir = base_dir / bucket_name (unless base_dir ends with bucket_name)
+        base_name = os.path.basename(os.path.normpath(self.base_dir))
+        if base_name == self.bucket_name:
+            # base_dir is the bucket directory itself, don't duplicate
+            self.bucket_dir = os.path.normpath(self.base_dir)
+        else:
+            self.bucket_dir = PathUtil.join(self.base_dir, bucket_name)
         os.makedirs(self.bucket_dir, exist_ok=True)
 
     def _resolve_remote_path(self, remote_path: str) -> str:
@@ -54,6 +62,12 @@ class LocalMockCloudStorage(CloudStorage):
         # 如果本地路径已经包含bucket前缀，说明是完整路径
         if remote_path.startswith(self.bucket_dir):
             return remote_path
+
+        # 如果remote_path以bucket_name/开头，说明是云端路径，需要去掉bucket_name前缀
+        if self.bucket_name and remote_path.startswith(self.bucket_name + "/"):
+            relative_path = remote_path[len(self.bucket_name) + 1:]
+            local_path = PathUtil.join(self.bucket_dir, relative_path)
+            return local_path
 
         # 转换为本地路径
         local_path = PathUtil.join(self.bucket_dir, remote_path)
@@ -142,9 +156,12 @@ class LocalMockCloudStorage(CloudStorage):
             for chunk in iter(lambda: f.read(8192), b''):
                 sha256.update(chunk)
 
-        # Construct cloud_path consistent with list_files
+        # Construct cloud_path: bucket_name/relative_path where relative_path is remote_path without bucket_name prefix
         # Use remote_path directly when bucket_name is empty to avoid leading slash
-        if self.bucket_name:
+        if self.bucket_name and remote_path.startswith(self.bucket_name + "/"):
+            relative_path = remote_path[len(self.bucket_name) + 1:]
+            cloud_path = f"{self.bucket_name}/{relative_path}"
+        elif self.bucket_name:
             cloud_path = f"{self.bucket_name}/{remote_path}"
         else:
             cloud_path = remote_path
