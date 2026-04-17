@@ -8,7 +8,7 @@ import shutil
 import hashlib
 import time
 from typing import List, Optional
-from cloud.base import CloudStorage
+from cloud.base import CloudStorage, FileInfo
 from utils.path_util import PathUtil
 
 
@@ -63,144 +63,131 @@ class LocalMockCloudStorage(CloudStorage):
         """获取bucket路径前缀"""
         return f"{self.bucket_name}/"
 
-    def list_files(self, prefix: str = "", is_include_tmp: bool = False) -> List[str]:
-        """
-        列出云端所有文件
-
-        Args:
-            prefix: 路径前缀过滤
-            is_include_tmp: 是否包含.tmp文件
-
-        Returns:
-            文件路径列表
-        """
-        prefix_to_list = PathUtil.join(self.bucket_dir, prefix).replace(os.sep, '/')
-
+    def list_files(
+        self,
+        prefix: str = "",
+        is_include_tmp: bool = False,
+        recursive: bool = True,
+        include_dirs: bool = False
+    ) -> List[FileInfo]:
+        prefix_path = PathUtil.join(self.bucket_dir, prefix).replace(os.sep, '/')
         results = []
         prefix_len = len(self.bucket_dir)
 
         for dirpath, dirnames, filenames in os.walk(self.bucket_dir):
+            # 处理目录（如果 include_dirs=True）
+            if include_dirs:
+                rel_dir = dirpath[prefix_len:].replace(os.sep, '/').lstrip('/')
+                if rel_dir and (not prefix or rel_dir.startswith(prefix.replace('\\', '/'))):
+                    results.append(FileInfo(
+                        file_id=rel_dir,
+                        file_path=f"{self.bucket_name}/{rel_dir}",
+                        size=None,
+                        file_hash=None,
+                        hash_algo=None,
+                        local_mtime=int(os.stat(dirpath).st_mtime),
+                        isdir=True
+                    ))
+
             for filename in filenames:
-                # 根据 is_include_tmp 参数决定是否跳过临时文件
-                if not is_include_tmp and (filename.endswith('.tmp')):
+                # 过滤 tmp 文件
+                if not is_include_tmp and filename.endswith('.tmp'):
                     continue
 
                 full_path = PathUtil.join(dirpath, filename).replace(os.sep, '/')
-                relative_path = full_path[prefix_len:]
+                relative_path = full_path[prefix_len:].lstrip(os.sep).replace(os.sep, '/')
+                cloud_path = f"{self.bucket_name}/{relative_path}"
 
-                # 构建云端路径格式
-                cloud_path = f"{self.bucket_name}/{relative_path.replace(os.sep, '/')}"
+                # 应用前缀过滤（非递归情况下只匹配直接子项）
+                if not recursive:
+                    if '/' in relative_path and not relative_path.startswith(prefix.replace('\\', '/').rstrip('/')):
+                        continue
 
-                # 应用前缀过滤
-                if full_path.startswith(prefix_to_list):
-                    results.append(cloud_path)
+                if full_path.startswith(prefix_path.replace('\\', '/')):
+                    stat = os.stat(full_path)
+                    sha256 = hashlib.sha256()
+                    with open(full_path, 'rb') as f:
+                        for chunk in iter(lambda: f.read(8192), b''):
+                            sha256.update(chunk)
+
+                    results.append(FileInfo(
+                        file_id=cloud_path,
+                        file_path=cloud_path,
+                        size=stat.st_size,
+                        file_hash=sha256.hexdigest(),
+                        hash_algo='sha256',
+                        local_mtime=int(stat.st_mtime),
+                        isdir=False
+                    ))
 
         return results
 
-    def upload_file(self, local_path: str, remote_path: str) -> None:
-        """
-        上传文件到云端
-
-        Args:
-            local_path: 本地文件路径
-            remote_path: 云端目标路径
-        """
+    def upload_file(self, local_path: str, remote_path: str) -> FileInfo:
         local_target = self._resolve_remote_path(remote_path)
-
-        # 确保目录存在
         os.makedirs(os.path.dirname(local_target) or self.bucket_dir, exist_ok=True)
-
-        # 复制文件
         shutil.copy2(local_path, local_target)
 
-    def download_file(self, remote_path: str, local_path: str) -> None:
-        """
-        从云端下载文件到本地
+        stat = os.stat(local_path)
+        sha256 = hashlib.sha256()
+        with open(local_path, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                sha256.update(chunk)
 
-        Args:
-            remote_path: 云端文件路径
-            local_path: 本地目标路径
-        """
+        return FileInfo(
+            file_id=remote_path,
+            file_path=remote_path,
+            size=stat.st_size,
+            file_hash=sha256.hexdigest(),
+            hash_algo='sha256',
+            local_mtime=int(stat.st_mtime),
+            isdir=False
+        )
+
+    def download_file(
+        self,
+        file_id: Optional[str],
+        remote_path: str,
+        local_path: str
+    ) -> None:
+        # file_id 参数 LocalMockCloud 不使用，直接用 remote_path
         local_source = self._resolve_remote_path(remote_path)
-
         if not os.path.exists(local_source):
             raise FileNotFoundError(f"Cloud file not found: {remote_path}")
-
-        # 确保本地目录存在
         os.makedirs(os.path.dirname(local_path) or '.', exist_ok=True)
-
-        # 复制文件
         shutil.copy2(local_source, local_path)
 
-    def delete_file(self, remote_path: str) -> None:
-        """
-        删除云端文件
-
-        Args:
-            remote_path: 云端文件路径
-        """
+    def delete_file(self, file_id: Optional[str], remote_path: str) -> None:
+        # file_id 参数 LocalMockCloud 不使用，直接用 remote_path
         local_path = self._resolve_remote_path(remote_path)
-
         if os.path.exists(local_path):
             os.unlink(local_path)
 
-    def rename_file(self, old_path: str, new_path: str) -> None:
-        """
-        重命名云端文件（先复制再删除，实现原子替换）
-
-        Args:
-            old_path: 原路径
-            new_path: 新路径
-        """
+    def rename_file(
+        self,
+        file_id: Optional[str],
+        old_path: str,
+        new_path: str
+    ) -> FileInfo:
+        # file_id 参数 LocalMockCloud 不使用，直接用路径
         old_local = self._resolve_remote_path(old_path)
         new_local = self._resolve_remote_path(new_path)
 
         if not os.path.exists(old_local):
             raise FileNotFoundError(f"Cloud file not found: {old_path}")
 
-        # 确保目标目录存在
         os.makedirs(os.path.dirname(new_local) or self.bucket_dir, exist_ok=True)
-
-        # 重命名
         os.rename(old_local, new_local)
 
-    def get_file_hash(self, remote_path: str) -> str:
-        """
-        获取云端文件hash值
-
-        Args:
-            remote_path: 云端文件路径
-
-        Returns:
-            SHA256哈希值
-        """
-        local_path = self._resolve_remote_path(remote_path)
-
-        if not os.path.exists(local_path):
-            raise FileNotFoundError(f"Cloud file not found: {remote_path}")
-
-        sha256 = hashlib.sha256()
-        with open(local_path, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                sha256.update(chunk)
-        return sha256.hexdigest()
-
-    def get_file_size(self, remote_path: str) -> int:
-        """
-        获取云端文件大小
-
-        Args:
-            remote_path: 云端文件路径
-
-        Returns:
-            文件大小（字节）
-        """
-        local_path = self._resolve_remote_path(remote_path)
-
-        if not os.path.exists(local_path):
-            raise FileNotFoundError(f"Cloud file not found: {remote_path}")
-
-        return os.path.getsize(local_path)
+        # 返回新文件的 FileInfo
+        return FileInfo(
+            file_id=new_path,
+            file_path=new_path,
+            size=os.path.getsize(new_local),
+            file_hash=None,
+            hash_algo=None,
+            local_mtime=int(os.path.getmtime(new_local)),
+            isdir=False
+        )
 
     def file_exists(self, remote_path: str) -> bool:
         """
