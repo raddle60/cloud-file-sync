@@ -197,7 +197,7 @@ class SyncEngine:
                 continue
 
             # 检查云端是否已有该文件（通过实际云端列表）
-            cloud_exists = any(f.file_path == cloud_path or f.file_path.endswith('/' + cloud_name) for f in cloud_files)
+            cloud_exists = any(f.file_path.lstrip(r"\/") == relative_path.lstrip(r"\/") for f in cloud_files)
             if not cloud_exists:
                 # 上传文件
                 local_path = self.get_local_path(relative_path)

@@ -90,6 +90,7 @@ class LocalMockCloudStorage(CloudStorage):
         if self.bucket_name and prefix.startswith(self.bucket_name + "/"):
             effective_prefix = prefix[len(self.bucket_name) + 1:]
 
+        effective_prefix = PathUtil.normalize_path(effective_prefix)
         prefix_path = PathUtil.join(self.bucket_dir, effective_prefix).replace(os.sep, '/')
         results = []
         prefix_len = len(self.bucket_dir)
@@ -97,16 +98,12 @@ class LocalMockCloudStorage(CloudStorage):
         for dirpath, dirnames, filenames in os.walk(self.bucket_dir):
             # 处理目录（如果 include_dirs=True）
             if include_dirs:
-                rel_dir = dirpath[prefix_len:].replace(os.sep, '/').lstrip('/')
+                rel_dir = PathUtil.normalize_path(dirpath[prefix_len:]).lstrip('/')
                 if rel_dir and (not effective_prefix or rel_dir.startswith(effective_prefix.replace('\\', '/'))):
                     # Construct cloud_path consistent with file case
-                    if self.bucket_name:
-                        cloud_dir_path = f"{self.bucket_name}/{rel_dir}"
-                    else:
-                        cloud_dir_path = rel_dir
                     results.append(FileInfo(
-                        file_id=cloud_dir_path,
-                        file_path=cloud_dir_path,
+                        file_id=rel_dir,
+                        file_path=rel_dir,
                         size=None,
                         file_hash=None,
                         hash_algo=None,
