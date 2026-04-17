@@ -108,7 +108,7 @@ class SyncEngineTestHelper:
     def cloud_delete_file(self, filename: str) -> None:
         """直接从云端删除文件"""
         remote_path = f"test-bucket/{filename}"
-        self.cloud.delete_file(remote_path)
+        self.cloud.delete_file(None, remote_path)
 
     def sync_and_wait(self, debounce_seconds: float = 1.0) -> None:
         """执行同步并等待debounce时间"""
@@ -134,7 +134,7 @@ class SyncEngineTestHelper:
             temp_path = f.name
 
         try:
-            self.cloud.download_file(remote_path, temp_path)
+            self.cloud.download_file(None, remote_path, temp_path)
             with open(temp_path, 'r') as f:
                 return f.read()
         finally:
@@ -182,7 +182,7 @@ class TestSyncEngineLocalToCloud:
         # 验证云端有文件
         cloud_files = sync_helper.cloud.list_files()
         assert len(cloud_files) >= 1
-        assert any("new_file.txt" in f for f in cloud_files)
+        assert any("new_file.txt" in f.file_path for f in cloud_files)
 
     def test_local_file_modified_via_callback(self, sync_helper):
         """场景2：本地修改文件通过文件变化回调同步
@@ -221,7 +221,7 @@ class TestSyncEngineLocalToCloud:
 
         # 确认云端有文件
         cloud_files_before = sync_helper.cloud.list_files()
-        assert any("to_delete.txt" in f for f in cloud_files_before)
+        assert any("to_delete.txt" in f.file_path for f in cloud_files_before)
 
         # 删除本地文件
         sync_helper.delete_file("to_delete.txt")
@@ -249,7 +249,7 @@ class TestSyncEngineLocalToCloud:
 
         # 验证
         cloud_files = sync_helper.cloud.list_files()
-        assert any("subdir" in f and "nested.txt" in f for f in cloud_files)
+        assert any("subdir" in f.file_path and "nested.txt" in f.file_path for f in cloud_files)
 
 
 class TestSyncEngineCloudToLocal:
@@ -274,7 +274,7 @@ class TestSyncEngineCloudToLocal:
 
         # 但云端确实有文件
         cloud_files = sync_helper.cloud.list_files()
-        assert any("cloud_only.txt" in f for f in cloud_files)
+        assert any("cloud_only.txt" in f.file_path for f in cloud_files)
 
 
 class TestSyncEngineEncrypted:
@@ -305,7 +305,7 @@ class TestSyncEngineEncrypted:
         assert len(cloud_files) >= 1
 
         # 云端文件名不应该是原始文件名（应该是hash）
-        file_keys = [f for f in cloud_files if 'encrypted_test.txt' not in f and '.meta.json' not in f]
+        file_keys = [f for f in cloud_files if 'encrypted_test.txt' not in f.file_path and '.meta.json' not in f.file_path]
         # 加密模式下，文件内容被加密，文件名是hash
 
 
@@ -347,7 +347,7 @@ class TestSyncEngineAtomic:
 
         # 验证云端文件存在
         cloud_files = sync_helper.cloud.list_files()
-        atomic_files = [f for f in cloud_files if 'atomic' in f and '.meta' not in f]
+        atomic_files = [f for f in cloud_files if 'atomic' in f.file_path and '.meta' not in f.file_path]
         assert len(atomic_files) >= 1
 
     def test_tmp_file_handling(self, sync_helper):
@@ -379,7 +379,7 @@ class TestSyncEngineAtomic:
             # 所以check_cloud_unfinished_tmp无法通过list_files找到tmp文件
             # 这是当前实现的一个限制
             cloud_files_listed = sync_helper.cloud.list_files("test-bucket/")
-            tmp_in_list = any(f.endswith('.tmp') for f in cloud_files_listed)
+            tmp_in_list = any(f.file_path.endswith('.tmp') for f in cloud_files_listed)
             assert not tmp_in_list  # list_files应该排除tmp
         finally:
             if os.path.exists(tmp_local):

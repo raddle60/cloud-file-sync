@@ -84,7 +84,13 @@ class LocalMockCloudStorage(CloudStorage):
         recursive: bool = True,
         include_dirs: bool = False
     ) -> List[FileInfo]:
-        prefix_path = PathUtil.join(self.bucket_dir, prefix).replace(os.sep, '/')
+        # Compute the effective prefix within bucket_dir
+        # If prefix starts with bucket_name/, strip it since bucket_dir already includes bucket_name
+        effective_prefix = prefix
+        if self.bucket_name and prefix.startswith(self.bucket_name + "/"):
+            effective_prefix = prefix[len(self.bucket_name) + 1:]
+
+        prefix_path = PathUtil.join(self.bucket_dir, effective_prefix).replace(os.sep, '/')
         results = []
         prefix_len = len(self.bucket_dir)
 
@@ -92,7 +98,7 @@ class LocalMockCloudStorage(CloudStorage):
             # 处理目录（如果 include_dirs=True）
             if include_dirs:
                 rel_dir = dirpath[prefix_len:].replace(os.sep, '/').lstrip('/')
-                if rel_dir and (not prefix or rel_dir.startswith(prefix.replace('\\', '/'))):
+                if rel_dir and (not effective_prefix or rel_dir.startswith(effective_prefix.replace('\\', '/'))):
                     # Construct cloud_path consistent with file case
                     if self.bucket_name:
                         cloud_dir_path = f"{self.bucket_name}/{rel_dir}"
@@ -123,7 +129,7 @@ class LocalMockCloudStorage(CloudStorage):
 
                 # 应用前缀过滤（非递归情况下只匹配直接子项）
                 if not recursive:
-                    if '/' in relative_path and not relative_path.startswith(prefix.replace('\\', '/').rstrip('/')):
+                    if '/' in relative_path and not relative_path.startswith(effective_prefix.replace('\\', '/').rstrip('/')):
                         continue
 
                 if full_path.startswith(prefix_path.replace('\\', '/')):
