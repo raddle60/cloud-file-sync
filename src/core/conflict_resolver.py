@@ -2,6 +2,7 @@ import os
 import time
 from typing import Tuple
 from models.sync_pair import FileMeta
+from utils.path_util import PathUtil
 
 class ConflictResolver:
     def generate_conflict_name(self, original_path: str, timestamp: int = None) -> str:
@@ -20,7 +21,7 @@ class ConflictResolver:
             new_name = f"{basename}.conflict-{timestamp}"
 
         if dirname:
-            return os.path.join(dirname, new_name)
+            return PathUtil.join(dirname, new_name)
         return new_name
 
     def generate_cloud_conflict_name(self, cloud_name: str, timestamp: int = None) -> str:

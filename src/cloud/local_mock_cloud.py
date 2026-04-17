@@ -9,6 +9,7 @@ import hashlib
 import time
 from typing import List, Optional
 from cloud.base import CloudStorage
+from utils.path_util import PathUtil
 
 
 class LocalMockCloudStorage(CloudStorage):
@@ -37,7 +38,7 @@ class LocalMockCloudStorage(CloudStorage):
         if not os.path.isdir(self.base_dir):
             raise FileNotFoundError("LocalMockCloudStorage base_dir does not exist: " + self.base_dir)
         self.bucket_name = bucket_name
-        self.bucket_dir = os.path.join(self.base_dir, bucket_name)
+        self.bucket_dir = PathUtil.join(self.base_dir, bucket_name)
         os.makedirs(self.bucket_dir, exist_ok=True)
 
     def _resolve_remote_path(self, remote_path: str) -> str:
@@ -55,7 +56,7 @@ class LocalMockCloudStorage(CloudStorage):
             remote_path = remote_path[len(self.bucket_name):].lstrip('/')
 
         # 转换为本地路径
-        local_path = os.path.join(self.bucket_dir, remote_path)
+        local_path = PathUtil.join(self.bucket_dir, remote_path)
         return local_path
 
     def _get_bucket_prefix(self) -> str:
@@ -73,32 +74,25 @@ class LocalMockCloudStorage(CloudStorage):
         Returns:
             文件路径列表
         """
-        prefix_to_list = prefix
-        # 如果prefix不以bucket_name开头，加上bucket前缀
-        if prefix_to_list and not prefix_to_list.startswith(self.bucket_name):
-            prefix_to_list = self._get_bucket_prefix() + prefix_to_list
-        elif not prefix_to_list:
-            prefix_to_list = self._get_bucket_prefix()
-
-        prefix_to_list = prefix_to_list.rstrip('/') + '/'
+        prefix_to_list = PathUtil.join(self.bucket_dir, prefix).replace(os.sep, '/')
 
         results = []
-        prefix_len = len(self.bucket_dir) + 1  # +1 for the path separator
+        prefix_len = len(self.bucket_dir)
 
         for dirpath, dirnames, filenames in os.walk(self.bucket_dir):
             for filename in filenames:
-                # 根据 is_include_tmp 参数决定是否跳过临时文件和meta文件
-                if not is_include_tmp and (filename.endswith('.tmp') or filename.endswith('.meta.json')):
+                # 根据 is_include_tmp 参数决定是否跳过临时文件
+                if not is_include_tmp and (filename.endswith('.tmp')):
                     continue
 
-                full_path = os.path.join(dirpath, filename)
+                full_path = PathUtil.join(dirpath, filename).replace(os.sep, '/')
                 relative_path = full_path[prefix_len:]
 
                 # 构建云端路径格式
                 cloud_path = f"{self.bucket_name}/{relative_path.replace(os.sep, '/')}"
 
                 # 应用前缀过滤
-                if cloud_path.startswith(prefix_to_list.replace(os.sep, '/')):
+                if full_path.startswith(prefix_to_list):
                     results.append(cloud_path)
 
         return results

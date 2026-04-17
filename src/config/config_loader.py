@@ -4,6 +4,7 @@ import json
 import os
 
 from models.sync_pair import SyncPair, CloudType
+from utils.path_util import PathUtil
 
 @dataclass
 class Config:
@@ -26,8 +27,8 @@ class Config:
             sp = SyncPair(**sp_data)
             # Resolve paths relative to config file directory
             if config_dir:
-                sp.local = os.path.normpath(os.path.join(config_dir, sp.local))
-                sp.remote = os.path.normpath(os.path.join(config_dir, sp.remote))
+                sp.local = os.path.normpath(PathUtil.join(config_dir, sp.local))
+                sp.remote = os.path.normpath(PathUtil.join(config_dir, sp.remote))
             sync_pairs.append(sp)
 
         return cls(

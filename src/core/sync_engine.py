@@ -10,6 +10,7 @@ from core.crypto import CryptoManager, derive_key
 from core.conflict_resolver import ConflictResolver
 from meta.meta_manager import MetaManager
 from cloud.base import CloudStorage
+from utils.path_util import PathUtil
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class SyncEngine:
         local = self.sync_pair.local.rstrip(os.sep)
         rel = relative_path.lstrip(os.sep)
         if rel:
-            return os.path.join(local, rel)
+            return PathUtil.join(local, rel)
         return local
 
     def scan_local_files(self):
@@ -67,7 +68,7 @@ class SyncEngine:
                 if filename.endswith('.tmp'):
                     continue
 
-                full_path = os.path.join(dirpath, filename)
+                full_path = PathUtil.join(dirpath, filename)
                 relative_path = os.path.relpath(full_path, self.sync_pair.local)
 
                 stat = os.stat(full_path)
@@ -294,21 +295,17 @@ class SyncEngine:
         import os
 
         # 从meta_path推导relative_path
-        # meta_path格式: remote/relative_path.meta.json
-        remote = self.sync_pair.remote.rstrip('/')
-        if meta_path.startswith(remote):
-            relative_path = meta_path[len(remote):].lstrip('/')
-            # 去掉 .meta.json 后缀得到 relative_path
-            if relative_path.endswith('.meta.json'):
-                relative_path = relative_path[:-len('.meta.json')]
-        else:
-            relative_path = ""
+        relative_path = meta_path
+        # 去掉 .meta.json 后缀得到 relative_path
+        if relative_path.endswith('.meta.json'):
+            relative_path = relative_path[:-len('.meta.json')]
 
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             tmp_path = tmp.name
 
         try:
-            self.cloud_storage.download_file(meta_path, tmp_path)
+            full_meta_path = PathUtil.join(self.sync_pair.remote, meta_path)
+            self.cloud_storage.download_file(full_meta_path, tmp_path)
 
             if self.sync_pair.encryption_enabled and self.crypto:
                 decrypted_tmp = tmp_path + ".dec"
@@ -460,7 +457,7 @@ class SyncEngine:
 
         # 本地文件重命名
         conflict_local_name = f"{name}.conflict-{timestamp}{ext}"
-        conflict_local_path = os.path.join(os.path.dirname(local_path), conflict_local_name)
+        conflict_local_path = PathUtil.join(os.path.dirname(local_path), conflict_local_name)
         os.rename(local_path, conflict_local_path)
         logger.info(f"[INFO] Renamed local file to: {conflict_local_name}")
 
