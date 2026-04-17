@@ -4,6 +4,7 @@ import tempfile
 import os
 from config.config_loader import ConfigLoader, Config
 from models.sync_pair import SyncPair, CloudType
+from utils.path_util import PathUtil
 
 def test_load_config_success():
     temp_dir = tempfile.gettempdir()
@@ -22,7 +23,7 @@ def test_load_config_success():
         config = loader.load()
         assert config.encryption_enabled == True
         assert len(config.sync_pairs) == 1
-        assert config.sync_pairs[0].local == temp_dir
+        assert PathUtil.normalize_path(config.sync_pairs[0].local) == PathUtil.normalize_path(temp_dir)
     finally:
         os.unlink(temp_path)
 
