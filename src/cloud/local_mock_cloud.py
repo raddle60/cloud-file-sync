@@ -79,9 +79,14 @@ class LocalMockCloudStorage(CloudStorage):
             if include_dirs:
                 rel_dir = dirpath[prefix_len:].replace(os.sep, '/').lstrip('/')
                 if rel_dir and (not prefix or rel_dir.startswith(prefix.replace('\\', '/'))):
+                    # Construct cloud_path consistent with file case
+                    if self.bucket_name:
+                        cloud_dir_path = f"{self.bucket_name}/{rel_dir}"
+                    else:
+                        cloud_dir_path = rel_dir
                     results.append(FileInfo(
-                        file_id=rel_dir,
-                        file_path=f"{self.bucket_name}/{rel_dir}",
+                        file_id=cloud_dir_path,
+                        file_path=cloud_dir_path,
                         size=None,
                         file_hash=None,
                         hash_algo=None,
@@ -95,8 +100,12 @@ class LocalMockCloudStorage(CloudStorage):
                     continue
 
                 full_path = PathUtil.join(dirpath, filename).replace(os.sep, '/')
-                relative_path = full_path[prefix_len:].lstrip(os.sep).replace(os.sep, '/')
-                cloud_path = f"{self.bucket_name}/{relative_path}"
+                relative_path = full_path[prefix_len:].lstrip(os.sep).lstrip('/').replace(os.sep, '/')
+                # Construct cloud_path consistent with upload_file
+                if self.bucket_name:
+                    cloud_path = f"{self.bucket_name}/{relative_path}"
+                else:
+                    cloud_path = relative_path
 
                 # 应用前缀过滤（非递归情况下只匹配直接子项）
                 if not recursive:
@@ -133,9 +142,16 @@ class LocalMockCloudStorage(CloudStorage):
             for chunk in iter(lambda: f.read(8192), b''):
                 sha256.update(chunk)
 
+        # Construct cloud_path consistent with list_files
+        # Use remote_path directly when bucket_name is empty to avoid leading slash
+        if self.bucket_name:
+            cloud_path = f"{self.bucket_name}/{remote_path}"
+        else:
+            cloud_path = remote_path
+
         return FileInfo(
-            file_id=remote_path,
-            file_path=remote_path,
+            file_id=cloud_path,
+            file_path=cloud_path,
             size=stat.st_size,
             file_hash=sha256.hexdigest(),
             hash_algo='sha256',

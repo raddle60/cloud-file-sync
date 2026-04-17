@@ -66,16 +66,16 @@ class TestLocalMockCloudStorageBasic:
             # 列出文件（不含tmp）
             files = mock_cloud.list_files()
             assert len(files) == 2
-            assert any("test.txt" in f for f in files)
-            assert any(".meta.json" in f for f in files)
+            assert any("test.txt" in f.file_path for f in files)  # 修改：f -> f.file_path
+            assert any(".meta.json" in f.file_path for f in files)
 
 
             # 使用is_include_tmp=True列出文件，应包含temp文件
             all_files = mock_cloud.list_files(is_include_tmp=True)
             assert len(all_files) == 3
-            assert any("test.txt" in f for f in all_files)
-            assert any("test.txt.tmp" in f for f in all_files)
-            assert any(".meta.json" in f for f in all_files)
+            assert any("test.txt" in f.file_path for f in all_files)
+            assert any("test.txt.tmp" in f.file_path for f in all_files)
+            assert any(".meta.json" in f.file_path for f in all_files)
         finally:
             os.unlink(local_path)
             os.unlink(tmp_local_path)
@@ -94,7 +94,7 @@ class TestLocalMockCloudStorageBasic:
 
             # 下载到新位置
             download_path = os.path.join(tempfile.gettempdir(), "downloaded.txt")
-            mock_cloud.download_file(remote_path, download_path)
+            mock_cloud.download_file(None, remote_path, download_path)  # 修改：添加 None
 
             assert os.path.exists(download_path)
             with open(download_path, 'r') as f:
@@ -135,7 +135,7 @@ class TestLocalMockCloudStorageBasic:
             assert mock_cloud.file_exists(meta_remote_path)
 
             # 删除主文件
-            mock_cloud.delete_file(remote_path)
+            mock_cloud.delete_file(None, remote_path)  # 修改：添加 None
 
             # 验证主文件已删除
             assert not mock_cloud.file_exists(remote_path)
@@ -176,7 +176,7 @@ class TestLocalMockCloudStorageBasic:
             mock_cloud.upload_file(meta_local, old_meta_path)
 
             # 重命名主文件
-            mock_cloud.rename_file(old_path, new_path)
+            mock_cloud.rename_file(None, old_path, new_path)  # 修改：添加 None
 
             # 验证新文件存在，旧文件不存在
             assert mock_cloud.file_exists(new_path)
@@ -189,39 +189,23 @@ class TestLocalMockCloudStorageBasic:
             os.unlink(local_path)
             os.unlink(meta_local)
 
-    def test_get_file_hash(self, mock_cloud):
-        """测试获取文件hash"""
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
-            f.write("Hash test content")
-            local_path = f.name
-
-        try:
-            remote_path = "hash_test.txt"
-            mock_cloud.upload_file(local_path, remote_path)
-
-            # 获取hash
-            hash1 = mock_cloud.get_file_hash(remote_path)
-            assert len(hash1) == 64  # SHA256 hex digest
-
-            # 再次获取应该相同
-            hash2 = mock_cloud.get_file_hash(remote_path)
-            assert hash1 == hash2
-        finally:
-            os.unlink(local_path)
-
-    def test_get_file_size(self, mock_cloud):
-        """测试获取文件大小"""
-        content = "Size test content"
+    def test_file_info_from_list(self, mock_cloud):
+        """测试 list_files 返回的 FileInfo 包含 hash 和 size"""
+        content = "Hash and size test"
         with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.txt') as f:
             f.write(content)
             local_path = f.name
 
         try:
-            remote_path = "size_test.txt"
+            remote_path = "info_test.txt"
             mock_cloud.upload_file(local_path, remote_path)
 
-            size = mock_cloud.get_file_size(remote_path)
-            assert size == len(content.encode('utf-8'))
+            files = mock_cloud.list_files()
+            file_info = next((f for f in files if f.file_path == remote_path), None)
+            assert file_info is not None
+            assert file_info.size == len(content.encode('utf-8'))
+            assert file_info.file_hash is not None
+            assert len(file_info.file_hash) == 64  # SHA256
         finally:
             os.unlink(local_path)
 
@@ -281,7 +265,7 @@ class TestLocalMockCloudStorageList:
 
             files = mock_cloud.list_files()
             # 应该不包含tmp文件
-            assert all(not f.endswith('.tmp') for f in files)
+            assert all(not f.file_path.endswith('.tmp') for f in files)
         finally:
             os.unlink(normal_path)
             if os.path.exists(tmp_local):
@@ -307,14 +291,24 @@ class TestLocalMockCloudStorageAtomic:
             assert mock_cloud.file_exists(tmp_path)
             assert not mock_cloud.file_exists(remote_path)
 
-            # 2. 验证
-            hash1 = mock_cloud.get_file_hash(tmp_path)
-            local_hash = mock_cloud.get_file_hash(local_path)  # 使用本地文件计算hash
+            # 2. 验证 - 使用 list_files 获取 file_info
+            cloud_files = mock_cloud.list_files(is_include_tmp=True)
+            tmp_info = next((f for f in cloud_files if f.file_path == tmp_path), None)
+
+            hash1 = tmp_info.file_hash if tmp_info else None
+
+            # 计算本地文件的 hash（因为 local_info 不存在 - 远程文件还未上传）
+            import hashlib
+            with open(local_path, 'rb') as f:
+                sha256 = hashlib.sha256()
+                for chunk in iter(lambda: f.read(8192), b''):
+                    sha256.update(chunk)
+            local_hash = sha256.hexdigest()
 
             # 3. 原子替换：删除旧文件，重命名tmp
             if hash1 == local_hash:  # 简化验证
-                mock_cloud.delete_file(remote_path)
-                mock_cloud.rename_file(tmp_path, remote_path)
+                mock_cloud.delete_file(None, remote_path)
+                mock_cloud.rename_file(None, tmp_path, remote_path)
 
             assert mock_cloud.file_exists(remote_path)
             assert not mock_cloud.file_exists(tmp_path)
@@ -328,14 +322,10 @@ class TestLocalMockCloudStorageErrors:
     def test_download_nonexistent_raises(self, mock_cloud):
         """测试下载不存在的文件抛出异常"""
         with pytest.raises(FileNotFoundError):
-            mock_cloud.download_file("nonexistent.txt", "/tmp/dummy.txt")
+            mock_cloud.download_file(None, "nonexistent.txt", "/tmp/dummy.txt")
 
     def test_delete_nonexistent_no_error(self, mock_cloud):
         """测试删除不存在的文件不抛异常"""
         # delete_file不应该抛异常
-        mock_cloud.delete_file("nonexistent.txt")
+        mock_cloud.delete_file(None, "nonexistent.txt")
 
-    def test_get_hash_nonexistent_raises(self, mock_cloud):
-        """测试获取不存在文件的hash抛出异常"""
-        with pytest.raises(FileNotFoundError):
-            mock_cloud.get_file_hash("nonexistent.txt")
