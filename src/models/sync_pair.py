@@ -4,6 +4,7 @@ from enum import Enum
 
 class CloudType(Enum):
     BAIDU_BOS = "baidu_bos"
+    BAIDU_NETDISK = "baidu_netdisk"
     LOCAL_MOCK = "local_mock"
 
 @dataclass

@@ -37,6 +37,13 @@ def create_cloud_storage(config, sync_pair):
             endpoint=os.environ.get('BOS_ENDPOINT', ''),
             bucket_name=sync_pair.remote.split('/')[0]
         )
+    elif config.cloud_type == CloudType.BAIDU_NETDISK:
+        from cloud.baidu_netdisk import BaiduNetdisk
+        return BaiduNetdisk(
+            access_token=os.environ.get('NETDISK_ACCESS_TOKEN', ''),
+            refresh_token=os.environ.get('NETDISK_REFRESH_TOKEN', ''),
+            app_name=sync_pair.remote.split('/')[0] if sync_pair.remote else 'cloud_file_sync'
+        )
     elif config.cloud_type == CloudType.LOCAL_MOCK:
         from cloud.local_mock_cloud import LocalMockCloudStorage
         return LocalMockCloudStorage(
