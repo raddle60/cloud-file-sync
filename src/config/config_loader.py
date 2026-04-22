@@ -16,7 +16,7 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict, config_dir: str = "") -> 'Config':
-        cloud_type_str = data.get('cloud_type', 'baidu_bos')
+        cloud_type_str = data.get('cloud_type', 'local_mock')
         try:
             cloud_type = CloudType(cloud_type_str)
         except ValueError:

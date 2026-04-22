@@ -43,7 +43,7 @@ def test_load_config_invalid_json():
 
 def test_config_cloud_type():
     config_data = {
-        "cloud_type": "baidu_bos",
+        "cloud_type": "local_mock",
         "encryption_enabled": False,
         "encryption_key": "key",
         "sync_pairs": []
@@ -54,14 +54,14 @@ def test_config_cloud_type():
     try:
         loader = ConfigLoader(temp_path)
         config = loader.load()
-        assert config.cloud_type == CloudType.BAIDU_BOS
+        assert config.cloud_type == CloudType.LOCAL_MOCK
     finally:
         os.unlink(temp_path)
 
 def test_config_remote_path_conflict():
     """测试 remote 路径冲突检测"""
     config_data = {
-        "cloud_type": "baidu_bos",
+        "cloud_type": "local_mock",
         "encryption_enabled": False,
         "encryption_key": "key",
         "sync_pairs": [
@@ -76,7 +76,7 @@ def test_config_remote_path_conflict():
 def test_config_remote_path_no_conflict():
     """测试 remote 路径无冲突"""
     config_data = {
-        "cloud_type": "baidu_bos",
+        "cloud_type": "local_mock",
         "encryption_enabled": False,
         "encryption_key": "key",
         "sync_pairs": [

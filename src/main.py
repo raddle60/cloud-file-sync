@@ -8,7 +8,6 @@ from core.crypto import derive_key, CryptoManager
 from core.sync_engine import SyncEngine
 from core.file_watcher import FileWatcher
 from storage.sync_state import SyncState
-from cloud.baidu_bos import BaiduBOS
 from models.sync_pair import SyncPair, CloudType
 
 _global_watcher = None
@@ -30,14 +29,7 @@ def parse_args(args=None):
 
 def create_cloud_storage(config, sync_pair):
     """根据 cloud_type 创建云端存储实例"""
-    if config.cloud_type == CloudType.BAIDU_BOS:
-        return BaiduBOS(
-            access_key_id=os.environ.get('BOS_ACCESS_KEY_ID', ''),
-            access_key_secret=os.environ.get('BOS_ACCESS_KEY_SECRET', ''),
-            endpoint=os.environ.get('BOS_ENDPOINT', ''),
-            bucket_name=sync_pair.remote.split('/')[0]
-        )
-    elif config.cloud_type == CloudType.BAIDU_NETDISK:
+    if config.cloud_type == CloudType.BAIDU_NETDISK:
         from cloud.baidu_netdisk import BaiduNetdisk
         return BaiduNetdisk(
             access_token=os.environ.get('NETDISK_ACCESS_TOKEN', ''),
